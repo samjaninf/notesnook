@@ -19,7 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 const FEATURE_CHECKS = {
   opfs: false,
-  cache: false
+  cache: false,
+  indexedDB: false,
+  clonableCryptoKey: false,
+  applePaySupported: !!window.ApplePaySession?.canMakePayments()
 };
 
 async function isOPFSSupported() {
@@ -28,10 +31,10 @@ async function isOPFSSupported() {
     typeof window.navigator.storage.getDirectory === "function";
   return (
     hasGetDirectory &&
-    window.navigator.storage
+    (await window.navigator.storage
       .getDirectory()
       .then(() => (FEATURE_CHECKS.opfs = true))
-      .catch(() => (FEATURE_CHECKS.opfs = false))
+      .catch(() => (FEATURE_CHECKS.opfs = false)))
   );
 }
 
@@ -42,15 +45,56 @@ async function isCacheSupported() {
     window.caches instanceof CacheStorage;
   return (
     hasCacheStorage &&
-    window.caches
+    (await window.caches
       .has("something")
-      .then((f) => (FEATURE_CHECKS.cache = true))
-      .catch((a) => (FEATURE_CHECKS.cache = false))
+      .then(() => (FEATURE_CHECKS.cache = true))
+      .catch(() => (FEATURE_CHECKS.cache = false)))
   );
 }
 
+async function isIndexedDBSupported() {
+  const hasIndexedDB = "indexedDB" in window;
+  return (
+    hasIndexedDB &&
+    (await new Promise((resolve, reject) => {
+      const request = indexedDB.open("checkIDBSupport");
+      request.onsuccess = () => {
+        request.result.close();
+        resolve(undefined);
+      };
+      request.onerror = reject;
+    })
+      .then(() => (FEATURE_CHECKS.indexedDB = true))
+      .catch(() => (FEATURE_CHECKS.indexedDB = false)))
+  );
+}
+
+async function isCryptoKeyClonable() {
+  if (IS_DESKTOP_APP) {
+    FEATURE_CHECKS.clonableCryptoKey = true;
+    return;
+  }
+
+  const key = await window.crypto.subtle.generateKey(
+    { name: "AES-KW", length: 256 },
+    false,
+    ["wrapKey", "unwrapKey"]
+  );
+  try {
+    structuredClone(key);
+    FEATURE_CHECKS.clonableCryptoKey = true;
+  } catch {
+    FEATURE_CHECKS.clonableCryptoKey = false;
+  }
+}
+
 export async function initializeFeatureChecks() {
-  await Promise.allSettled([isOPFSSupported(), isCacheSupported()]);
+  await Promise.allSettled([
+    isOPFSSupported(),
+    isCacheSupported(),
+    isIndexedDBSupported(),
+    isCryptoKeyClonable()
+  ]);
 }
 
 function isFeatureSupported(key: keyof typeof FEATURE_CHECKS) {

@@ -17,141 +17,175 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { showMultiDeleteConfirmation } from "./dialog-controller";
 import { store as noteStore } from "../stores/note-store";
 import { store as notebookStore } from "../stores/notebook-store";
 import { store as attachmentStore } from "../stores/attachment-store";
 import { store as reminderStore } from "../stores/reminder-store";
+import { store as tagStore } from "../stores/tag-store";
+import { store as appStore } from "../stores/app-store";
 import { db } from "./db";
 import { showToast } from "../utils/toast";
 import Vault from "./vault";
 import { TaskManager } from "./task-manager";
-import { pluralize } from "@notesnook/common";
+import { ConfirmDialog, showMultiDeleteConfirmation } from "../dialogs/confirm";
+import { strings } from "@notesnook/intl";
 
-type Item = {
-  id: string;
-  locked?: boolean;
-  metadata?: Record<string, unknown>;
-};
+async function moveNotesToTrash(ids: string[], confirm = true) {
+  if (confirm && !(await showMultiDeleteConfirmation(ids.length))) return;
 
-async function moveNotesToTrash(notes: Item[], confirm = true) {
-  if (confirm && !(await showMultiDeleteConfirmation(notes.length))) return;
-  if (notes.some((n) => n.locked) && !(await Vault.unlockVault())) return;
+  const vault = await db.vaults.default();
+  if (vault) {
+    const lockedIds = await db.relations.from(vault, "note").get();
+    if (
+      ids.some((id) => lockedIds.findIndex((s) => s.toId === id) > -1) &&
+      !(await Vault.unlockVault())
+    )
+      return;
+  }
 
-  const items = notes.map((item) => {
-    if (db.monographs?.isPublished(item.id)) return 0;
-    return item.id;
-  });
+  const items = ids.filter((id) => !db.monographs.isPublished(id));
 
   await TaskManager.startTask({
     type: "status",
     id: "deleteNotes",
+    title: strings.inProgressActions.deleting.note(items.length),
     action: async (report) => {
       report({
-        text: `Deleting ${pluralize(items.length, "note")}...`
+        text: strings.inProgressActions.deleting.note(items.length)
       });
       await noteStore.delete(...items);
     }
   });
 
-  showToast("success", `${pluralize(items.length, "note")} moved to trash`);
+  showToast("success", strings.actions.movedToTrash.note(items.length));
 }
 
-async function moveNotebooksToTrash(notebooks: Item[]) {
-  const item = notebooks[0];
-  const isMultiselect = notebooks.length > 1;
-  if (isMultiselect) {
-    if (!(await showMultiDeleteConfirmation(notebooks.length))) return;
+async function moveNotebooksToTrash(ids: string[]) {
+  if (!ids.length) return;
+
+  const result = await ConfirmDialog.show({
+    title: strings.doActions.delete.notebook(ids.length),
+    positiveButtonText: strings.yes(),
+    negativeButtonText: strings.no(),
+    checks: {
+      deleteContainingNotes: {
+        text: strings.deleteContainingNotes(ids.length)
+      }
+    }
+  });
+
+  if (!result) return;
+
+  if (result.deleteContainingNotes) {
+    await Multiselect.moveNotesToTrash(
+      Array.from(
+        new Set(
+          (await Promise.all(ids.map((id) => db.notebooks.notes(id)))).flat()
+        )
+      ),
+      false
+    );
   }
 
   await TaskManager.startTask({
     type: "status",
     id: "deleteNotebooks",
+    title: strings.inProgressActions.deleting.notebook(ids.length),
     action: async (report) => {
       report({
-        text: `Deleting ${pluralize(notebooks.length, "notebook")}...`
+        text: strings.inProgressActions.deleting.notebook(ids.length)
       });
-      await notebookStore.delete(...notebooks.map((i) => i.id));
+      await notebookStore.delete(...ids);
     }
   });
 
-  showToast(
-    "success",
-    `${pluralize(notebooks.length, "notebook")} moved to trash`
-  );
+  showToast("success", strings.actions.movedToTrash.notebook(ids.length));
 }
 
-async function deleteTopics(notebookId: string, topics: Item[]) {
-  await TaskManager.startTask({
-    type: "status",
-    id: "deleteTopics",
-    action: async (report) => {
-      report({
-        text: `Deleting ${pluralize(topics.length, "topic")}...`
-      });
-      await db.notebooks
-        ?.notebook(notebookId)
-        .topics.delete(...topics.map((t) => t.id));
-      notebookStore.setSelectedNotebook(notebookId);
-      noteStore.refresh();
-    }
-  });
-  showToast("success", `${pluralize(topics.length, "topic")} deleted`);
-}
-
-async function deleteAttachments(attachments: Item[]) {
+async function deleteAttachments(ids: string[]) {
   if (
-    !window.confirm(
-      "Are you sure you want to permanently delete these attachments? This action is IRREVERSIBLE."
-    )
+    !(await ConfirmDialog.show({
+      title: strings.doActions.permanentlyDelete.attachment(ids.length),
+      message: strings.irreverisibleAction(),
+      negativeButtonText: strings.no(),
+      positiveButtonText: strings.yes()
+    }))
   )
     return;
 
   await TaskManager.startTask({
     type: "status",
     id: "deleteAttachments",
+    title: strings.inProgressActions.deleting.attachment(ids.length),
     action: async (report) => {
-      for (let i = 0; i < attachments.length; ++i) {
-        const attachment = attachments[i];
+      for (let i = 0; i < ids.length; ++i) {
+        const id = ids[i];
+        const attachment = await db.attachments.attachment(id);
+        if (!attachment) continue;
+
         report({
-          text: `Deleting ${pluralize(attachments.length, "attachment")}...`,
+          text: strings.inProgressActions.deleting.attachment(ids.length),
           current: i,
-          total: attachments.length
+          total: ids.length
         });
-        await attachmentStore.permanentDelete(attachment.metadata?.hash);
+        await attachmentStore.permanentDelete(attachment);
       }
     }
   });
-  showToast(
-    "success",
-    `${pluralize(attachments.length, "attachment")} deleted`
-  );
+  showToast("success", strings.actions.deleted.attachment(ids.length));
 }
 
-async function moveRemindersToTrash(reminders: Item[]) {
-  const isMultiselect = reminders.length > 1;
+async function moveRemindersToTrash(ids: string[]) {
+  const isMultiselect = ids.length > 1;
   if (isMultiselect) {
-    if (!(await showMultiDeleteConfirmation(reminders.length))) return;
+    if (!(await showMultiDeleteConfirmation(ids.length))) return;
   }
 
   await TaskManager.startTask({
     type: "status",
     id: "deleteReminders",
+    title: strings.inProgressActions.deleting.reminder(ids.length),
     action: async (report) => {
       report({
-        text: `Deleting ${pluralize(reminders.length, "reminder")}...`
+        text: strings.inProgressActions.deleting.reminder(ids.length)
       });
-      await reminderStore.delete(...reminders.map((i) => i.id));
+      await reminderStore.delete(...ids);
     }
   });
 
-  showToast("success", `${pluralize(reminders.length, "reminder")} deleted.`);
+  showToast("success", strings.actions.deleted.reminder(ids.length));
+}
+
+async function deleteTags(ids: string[]) {
+  const isMultiselect = ids.length > 1;
+  if (isMultiselect) {
+    if (!(await showMultiDeleteConfirmation(ids.length))) return;
+  }
+
+  await TaskManager.startTask({
+    type: "status",
+    id: "deleteTags",
+    title: "Deleting tags",
+    action: async (report) => {
+      report({
+        text: strings.inProgressActions.deleting.tag(ids.length)
+      });
+      for (const id of ids) {
+        await db.tags.remove(id);
+      }
+      await appStore.refreshNavItems();
+      await tagStore.refresh();
+      await noteStore.refresh();
+    }
+  });
+
+  showToast("success", strings.actions.deleted.tag(ids.length));
 }
 
 export const Multiselect = {
   moveRemindersToTrash,
   moveNotebooksToTrash,
   moveNotesToTrash,
-  deleteTopics,
-  deleteAttachments
+  deleteAttachments,
+  deleteTags
 };

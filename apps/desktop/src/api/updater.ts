@@ -28,16 +28,38 @@ type UpdateInfo = { version: string };
 type Progress = { percent: number };
 
 const t = initTRPC.create();
+let cancellationToken: CancellationToken | undefined = undefined;
+let downloadTimeout: NodeJS.Timeout | undefined = undefined;
 
 export const updaterRouter = t.router({
   autoUpdates: t.procedure.query(() => config.automaticUpdates),
   install: t.procedure.query(() => autoUpdater.quitAndInstall()),
   download: t.procedure.query(async () => {
-    const cancellationToken = new CancellationToken();
-    await autoUpdater.downloadUpdate(cancellationToken);
+    if (cancellationToken) return;
+    clearTimeout(downloadTimeout);
+    await new Promise<string[]>((resolve, reject) => {
+      downloadTimeout = setTimeout(async () => {
+        cancellationToken = new CancellationToken();
+        autoUpdater.isUpdaterActive();
+        await autoUpdater
+          .downloadUpdate(cancellationToken)
+          .then(resolve)
+          .catch(reject)
+          .finally(() => (cancellationToken = undefined));
+      }, 1000);
+    });
   }),
   check: t.procedure.query(async () => {
-    await autoUpdater.checkForUpdates();
+    if (cancellationToken) return;
+    clearTimeout(downloadTimeout);
+    await new Promise<void>((resolve) => {
+      downloadTimeout = setTimeout(async () => {
+        await autoUpdater
+          .checkForUpdates()
+          .catch(console.error)
+          .finally(resolve);
+      }, 1000);
+    });
   }),
 
   toggleAutoUpdates: t.procedure
@@ -57,7 +79,18 @@ export const updaterRouter = t.router({
     "update-not-available"
   ),
   onAvailable: createSubscription<"update-available", UpdateInfo>(
-    "update-available"
+    "update-available",
+    () => {
+      if (!config.automaticUpdates) return false;
+      autoUpdater.emit("download-progress", {
+        bytesPerSecond: 0,
+        delta: 0,
+        percent: 0,
+        total: 100,
+        transferred: 0
+      });
+      return true;
+    }
   ),
   onError: createSubscription("error")
 });
@@ -65,12 +98,14 @@ export const updaterRouter = t.router({
 function createSubscription<
   TName extends keyof AppUpdaterEvents,
   TReturnType = Parameters<AppUpdaterEvents[TName]>[0]
->(eventName: TName) {
+>(eventName: TName, handler?: (args: TReturnType) => boolean) {
   return t.procedure.subscription(() => {
     return observable<TReturnType>((emit) => {
       const listener: AppUpdaterEvents[TName] = (...args: any[]) => {
+        if (handler?.(args[0])) return;
         emit.next(args[0]);
       };
+      autoUpdater.removeAllListeners(eventName);
       autoUpdater.addListener(eventName, listener);
       return () => {
         autoUpdater.removeListener(eventName, listener);

@@ -17,18 +17,20 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Button, Text } from "@theme-ui/components";
-import { useStore as useAppStore } from "../../stores/app-store";
+import { Button, Flex, FlexProps, Image, Text } from "@theme-ui/components";
 import { Menu } from "../../hooks/use-menu";
 import useMobile from "../../hooks/use-mobile";
 import { PropsWithChildren } from "react";
 import { Icon, Shortcut } from "../icons";
-import { AnimatedFlex } from "../animated";
 import { SchemeColors, createButtonVariant } from "@notesnook/theme";
 import { MenuItem } from "@notesnook/ui";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { AppEventManager, AppEvents } from "../../common/app-events";
 
 type NavigationItemProps = {
-  icon: Icon;
+  icon?: Icon;
+  image?: string;
   color?: SchemeColors;
   title: string;
   isTablet?: boolean;
@@ -38,14 +40,17 @@ type NavigationItemProps = {
   selected?: boolean;
   onClick?: () => void;
   count?: number;
-  animate?: boolean;
-  index?: number;
   menuItems?: MenuItem[];
 };
 
-function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
+function NavigationItem(
+  props: PropsWithChildren<
+    NavigationItemProps & { containerRef?: React.Ref<HTMLElement> } & FlexProps
+  >
+) {
   const {
     icon: Icon,
+    image,
     color,
     title,
     isLoading,
@@ -57,24 +62,20 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
     onClick,
     menuItems,
     count,
-    animate = false,
-    index = 0
+    sx,
+    containerRef,
+    ...restProps
   } = props;
-  const toggleSideMenu = useAppStore((store) => store.toggleSideMenu);
   const isMobile = useMobile();
 
   return (
-    <AnimatedFlex
-      initial={{
-        opacity: animate ? 0 : 1,
-        // y: animate ? 0 : 0,
-        x: animate ? (isTablet ? 0 : 10) : 0
+    <Flex
+      {...restProps}
+      ref={containerRef}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.currentTarget.focus();
       }}
-      animate={{
-        opacity: 1,
-        x: 0
-      }}
-      transition={{ duration: 0.1, delay: index * 0.05, ease: "easeIn" }}
       sx={{
         ...createButtonVariant(
           selected ? "background-selected" : "transparent",
@@ -92,7 +93,9 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
         alignItems: "center",
         position: "relative",
         ":first-of-type": { mt: 1 },
-        ":last-of-type": { mb: 1 }
+        ":last-of-type": { mb: 1 },
+        ":focus": { bg: selected ? "hover-selected" : "hover" },
+        ...sx
         // ":hover:not(:disabled)": {
         //   bg: "hover",
         //   filter: "brightness(100%)"
@@ -102,7 +105,7 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
       <Button
         data-test-id={`navigation-item`}
         sx={{
-          px: 2,
+          px: isTablet ? 1 : 2,
           flex: 1,
           alignItems: "center",
           justifyContent: isTablet ? "center" : "flex-start",
@@ -112,18 +115,26 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
         onContextMenu={(e) => {
           if (!menuItems) return;
           e.preventDefault();
+          e.stopPropagation();
           Menu.openMenu(menuItems);
         }}
         onClick={() => {
-          if (isMobile) toggleSideMenu(false);
+          AppEventManager.publish(AppEvents.toggleSideMenu, false);
           if (onClick) onClick();
         }}
       >
-        <Icon
-          size={isTablet ? 16 : 15}
-          color={color || (selected ? "icon-selected" : "icon")}
-          rotate={isLoading}
-        />
+        {image ? (
+          <Image
+            src={image}
+            sx={{ borderRadius: 50, size: 20, minWidth: 20, flexShrink: 0 }}
+          />
+        ) : Icon ? (
+          <Icon
+            size={isTablet ? 16 : 15}
+            color={color || (selected ? "icon-selected" : "icon")}
+            rotate={isLoading}
+          />
+        ) : null}
         {isShortcut && (
           <Shortcut
             size={8}
@@ -170,7 +181,11 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
       ) : !isTablet && count !== undefined ? (
         <Text
           variant="subBody"
-          sx={{ mr: 1, bg: "hover", px: "3px", borderRadius: "default" }}
+          sx={{
+            mr: 1,
+            px: "3px",
+            borderRadius: "default"
+          }}
         >
           {count > 100 ? "100+" : count}
         </Text>
@@ -185,7 +200,36 @@ function NavigationItem(props: PropsWithChildren<NavigationItemProps>) {
           {tag}
         </Text>
       ) : null}
-    </AnimatedFlex>
+    </Flex>
   );
 }
 export default NavigationItem;
+
+export function SortableNavigationItem(
+  props: PropsWithChildren<
+    {
+      id: string;
+      onDragEnter?: React.DragEventHandler<HTMLElement>;
+      onDragLeave?: React.DragEventHandler<HTMLElement>;
+      onDrop?: React.DragEventHandler<HTMLElement>;
+    } & NavigationItemProps
+  >
+) {
+  const { id, ...restProps } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, active } =
+    useSortable({ id });
+
+  return (
+    <NavigationItem
+      {...restProps}
+      containerRef={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        visibility: active?.id === id ? "hidden" : "visible"
+      }}
+      {...listeners}
+      {...attributes}
+    />
+  );
+}

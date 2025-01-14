@@ -26,7 +26,7 @@ import React, {
   useRef,
   useState
 } from "react";
-import { Text, Flex, Button, Box } from "@theme-ui/components";
+import { Text, Flex, Button, Box, Image } from "@theme-ui/components";
 import { useSessionState } from "../../hooks/use-session-state";
 import {
   Loading,
@@ -46,18 +46,19 @@ import { phone } from "phone";
 import { db } from "../../common/db";
 import FileSaver from "file-saver";
 import { writeText } from "clipboard-polyfill";
-import { ReactComponent as MFA } from "../../assets/mfa.svg";
-import { ReactComponent as Fallback2FA } from "../../assets/fallback2fa.svg";
+import MFA from "../../assets/mfa.svg?url";
+import Fallback2FA from "../../assets/fallback2fa.svg?url";
 import {
   Authenticator,
-  AuthenticatorType,
   StepComponent,
   SubmitCodeFunction,
   StepComponentProps,
   OnNextFunction
 } from "./types";
-import { showMultifactorDialog } from "../../common/dialog-controller";
 import { ErrorText } from "../../components/error-text";
+import { AuthenticatorType } from "@notesnook/core";
+import { MultifactorDialog } from "./multi-factor-dialog";
+import { strings } from "@notesnook/intl";
 
 const QRCode = React.lazy(() => import("../../re-exports/react-qrcode-logo"));
 
@@ -101,22 +102,21 @@ const defaultAuthenticators: AuthenticatorType[] = ["app", "sms", "email"];
 const Authenticators: Authenticator[] = [
   {
     type: "app",
-    title: "Set up using an Authenticator app",
-    subtitle:
-      "Use an authenticator app like Aegis or Raivo Authenticator to get the authentication codes.",
+    title: strings.mfaAuthAppTitle(),
+    subtitle: strings.mfaAuthAppDesc(),
     icon: MfaAuthenticator,
     recommended: true
   },
   {
     type: "sms",
-    title: "Set up using SMS",
-    subtitle: "Notesnook will send you an SMS text with the 2FA code at login.",
+    title: strings.mfaSmsTitle(),
+    subtitle: strings.mfaSmsDesc(),
     icon: MfaSms
   },
   {
     type: "email",
-    title: "Set up using Email",
-    subtitle: "Notesnook will send you the 2FA code on your email at login.",
+    title: strings.mfaEmailTitle(),
+    subtitle: strings.mfaEmailDesc(),
     icon: MfaEmail
   }
 ];
@@ -125,8 +125,8 @@ export type AuthenticatorTypeOnNext = (type: AuthenticatorType) => void;
 
 export const steps = {
   choose: (): Step<AuthenticatorOnNext> => ({
-    title: "Protect your notes by enabling 2FA",
-    description: "Choose how you want to receive your authentication codes.",
+    title: strings["2fa"](),
+    description: strings.select2faMethod(),
     component: ({ onNext }) => (
       <ChooseAuthenticator
         onNext={onNext}
@@ -151,14 +151,8 @@ export const steps = {
   recoveryCodes: (
     authenticatorType: AuthenticatorType
   ): Step<AuthenticatorTypeOnNext> => ({
-    title: "Save your recovery codes",
-    description: `If you lose access to your ${
-      authenticatorType === "email"
-        ? "email"
-        : authenticatorType === "sms"
-        ? "phone"
-        : "auth app"
-    }, you can login to Notesnook using your recovery codes. Each code can only be used once!`,
+    title: strings.saveRecoveryCodes(),
+    description: strings.saveRecoveryCodesDesc(),
     component: ({ onNext, onClose, onError }) => (
       <BackupRecoveryCodes
         onClose={onClose}
@@ -187,9 +181,8 @@ export const fallbackSteps = {
   choose: (
     primaryMethod: AuthenticatorType
   ): FallbackStep<AuthenticatorOnNext> => ({
-    title: "Add a fallback 2FA method",
-    description:
-      "A fallback method helps you get your 2FA codes on an alternative device in case you lose your primary device.",
+    title: strings.addFallback2faMethod(),
+    description: strings.addFallback2faMethodDesc(),
     component: ({ onNext }) => (
       <ChooseAuthenticator
         onNext={onNext}
@@ -265,7 +258,7 @@ function ChooseAuthenticator(props: ChooseAuthenticatorProps) {
             justifyContent: "start",
             alignItems: "start",
             textAlign: "left",
-            bg: "transparent",
+            bg: selected === index ? "shade" : "transparent",
             px: 0
           }}
           onClick={() => setSelected(index)}
@@ -292,7 +285,7 @@ function ChooseAuthenticator(props: ChooseAuthenticatorProps) {
                 px={1}
                 sx={{ borderRadius: "default", color: "accent" }}
               >
-                Recommended
+                {strings.recommended()}
               </Text>
             ) : (
               false
@@ -312,8 +305,8 @@ function AuthenticatorSelector(props: AuthenticatorSelectorProps) {
   const onSubmitCode: SubmitCodeFunction = useCallback(
     async (code) => {
       try {
-        if (isFallback) await db.mfa?.enableFallback(authenticator, code);
-        else await db.mfa?.enable(authenticator, code);
+        if (isFallback) await db.mfa.enableFallback(authenticator, code);
+        else await db.mfa.enable(authenticator, code);
         onNext(authenticator);
       } catch (e) {
         const error = e as Error;
@@ -342,20 +335,16 @@ function SetupAuthenticatorApp(props: SetupAuthenticatorProps) {
 
   useEffect(() => {
     (async function () {
-      setAuthenticatorDetails(await db.mfa?.setup("app"));
+      setAuthenticatorDetails(await db.mfa.setup("app"));
     })();
   }, []);
 
   return (
     <VerifyAuthenticatorForm
-      codeHelpText={
-        "After scanning the QR code image, the app will display a code that you can enter below."
-      }
+      codeHelpText={strings.mfaScanQrCodeHelpText()}
       onSubmitCode={onSubmitCode}
     >
-      <Text variant={"body"}>
-        Scan the QR code below with your authenticator app.
-      </Text>
+      <Text variant={"body"}>{strings.mfaScanQrCode()}</Text>
       <Box sx={{ alignSelf: "center" }}>
         {authenticatorDetails.authenticatorUri ? (
           <Suspense fallback={<Loading />}>
@@ -369,10 +358,7 @@ function SetupAuthenticatorApp(props: SetupAuthenticatorProps) {
           <Loading />
         )}
       </Box>
-      <Text variant={"subBody"}>
-        {`If you can't scan the QR code above, enter this text instead (spaces
-        don't matter):`}
-      </Text>
+      <Text variant={"subBody"}>{`${strings.scanQrError()}:`}</Text>
       <Flex
         bg="var(--background-secondary)"
         mt={2}
@@ -426,16 +412,14 @@ function SetupEmail(props: SetupAuthenticatorProps) {
   useEffect(() => {
     (async () => {
       if (!db.user) return;
-      const { email } = await db.user.getUser();
+      const { email } = (await db.user.getUser()) || {};
       setEmail(email);
     })();
   }, []);
 
   return (
     <VerifyAuthenticatorForm
-      codeHelpText={
-        "You will receive a 2FA code on your email address which you can enter below"
-      }
+      codeHelpText={strings.mfaEmailDesc()}
       onSubmitCode={onSubmitCode}
     >
       <Flex
@@ -461,7 +445,7 @@ function SetupEmail(props: SetupAuthenticatorProps) {
           onClick={async () => {
             setIsSending(true);
             try {
-              await db.mfa?.setup("email");
+              await db.mfa.setup("email");
               setEnabled(false);
             } catch (e) {
               const error = e as Error;
@@ -475,9 +459,9 @@ function SetupEmail(props: SetupAuthenticatorProps) {
           {isSending ? (
             <Loading size={18} />
           ) : enabled ? (
-            `Send code`
+            strings.sendCode()
           ) : (
-            `Resend (${elapsed})`
+            strings.resendCode(elapsed)
           )}
         </Button>
       </Flex>
@@ -496,17 +480,15 @@ function SetupSMS(props: SetupAuthenticatorProps) {
 
   return (
     <VerifyAuthenticatorForm
-      codeHelpText={
-        "You will receive a 2FA code on your phone number which you can enter below"
-      }
+      codeHelpText={strings.mfaSmsDesc()}
       onSubmitCode={onSubmitCode}
     >
       <Field
         inputRef={inputRef}
         id="phone-number"
         name="phone-number"
-        helpText="Authentication codes will be sent to this number"
-        label="Phone number"
+        helpText={strings.mfaSmsDesc()}
+        label={strings.phoneNumber()}
         sx={{ mt: 2 }}
         autoFocus
         required
@@ -528,27 +510,27 @@ function SetupSMS(props: SetupAuthenticatorProps) {
           }
         }}
         action={{
-          disabled: error || isSending || !enabled,
+          disabled: !!error || isSending || !enabled,
           component: (
             <Text variant={"body"}>
               {isSending ? (
                 <Loading size={18} />
               ) : enabled ? (
-                `Send code`
+                strings.sendCode()
               ) : (
-                `Resend (${elapsed})`
+                strings.resendCode(elapsed)
               )}
             </Text>
           ),
           onClick: async () => {
             if (!phoneNumber) {
-              setError("Please provide a phone number.");
+              setError(strings.phoneNumberNotEntered());
               return;
             }
 
             setIsSending(true);
             try {
-              await db.mfa?.setup("sms", phoneNumber);
+              await db.mfa.setup("sms", phoneNumber);
               setEnabled(false);
             } catch (e) {
               const error = e as Error;
@@ -572,7 +554,7 @@ function BackupRecoveryCodes(props: TwoFactorEnabledProps) {
   const generate = useCallback(async () => {
     onError && onError("");
     try {
-      const codes = await db.mfa?.codes();
+      const codes = await db.mfa.codes();
       if (codes) setCodes(codes);
     } catch (e) {
       const error = e as Error;
@@ -589,7 +571,7 @@ function BackupRecoveryCodes(props: TwoFactorEnabledProps) {
   const actions = useMemo(
     () => [
       {
-        title: "Print",
+        title: strings.print(),
         icon: Print,
         action: async () => {
           if (!recoveryCodesRef.current) return;
@@ -600,7 +582,7 @@ function BackupRecoveryCodes(props: TwoFactorEnabledProps) {
         }
       },
       {
-        title: "Copy",
+        title: strings.copy(),
         icon: Copy,
         action: async () => {
           await writeText(codes.join("\n"));
@@ -617,7 +599,7 @@ function BackupRecoveryCodes(props: TwoFactorEnabledProps) {
         }
       },
       {
-        title: "Download",
+        title: strings.network.download(),
         icon: Download,
         action: () => {
           FileSaver.saveAs(
@@ -626,7 +608,7 @@ function BackupRecoveryCodes(props: TwoFactorEnabledProps) {
           );
         }
       },
-      { title: "Regenerate", icon: Refresh, action: generate }
+      { title: strings.regenerate(), icon: Refresh, action: generate }
     ],
     [codes, generate]
   );
@@ -705,27 +687,27 @@ function TwoFactorEnabled(props: TwoFactorEnabledProps) {
         justifyContent: "center"
       }}
     >
-      <MFA style={{ flexShrink: 0, width: 120, height: 120 }} />
+      <Image src={MFA} style={{ flexShrink: 0, width: 120, height: 120 }} />
       <Text
         variant={"heading"}
         mt={2}
         sx={{ fontSize: "subheading", textAlign: "center" }}
       >
-        Two-factor authentication enabled!
+        {strings.twoFactorAuthEnabled()}
       </Text>
       <Text
         variant={"body"}
         mt={1}
         sx={{ textAlign: "center", color: "var(--paragraph-secondary)" }}
       >
-        Your account is now 100% secure against unauthorized logins.
+        {strings.mfaDone()}
       </Text>
       <Button
         mt={2}
         sx={{ borderRadius: 100, px: 6 }}
         onClick={() => props.onClose?.(true)}
       >
-        Done
+        {strings.done()}
       </Button>
 
       <Button
@@ -734,7 +716,9 @@ function TwoFactorEnabled(props: TwoFactorEnabledProps) {
         onClick={() => {
           props.onClose && props.onClose(true);
           setTimeout(async () => {
-            await showMultifactorDialog(props.authenticatorType);
+            await MultifactorDialog.show({
+              primaryMethod: props.authenticatorType
+            });
           }, 100);
         }}
       >
@@ -759,29 +743,30 @@ function Fallback2FAEnabled(props: Fallback2FAEnabledProps) {
         justifyContent: "center"
       }}
     >
-      <Fallback2FA style={{ flexShrink: 0, width: 200, height: 200 }} />
+      <Image
+        src={Fallback2FA}
+        style={{ flexShrink: 0, width: 200, height: 200 }}
+      />
       <Text
         variant={"heading"}
         mt={2}
         sx={{ fontSize: "subheading", textAlign: "center" }}
       >
-        Fallback 2FA method enabled!
+        {strings.fallbackMethodEnabled()}
       </Text>
       <Text
         variant={"body"}
         mt={1}
         sx={{ textAlign: "center", color: "var(--paragraph-secondary)" }}
       >
-        You will now receive your 2FA codes on your{" "}
-        {mfaMethodToPhrase(fallbackMethod)} in case you lose access to your{" "}
-        {mfaMethodToPhrase(primaryMethod)}.
+        {strings.mfaFallbackMethodText(fallbackMethod, primaryMethod)}
       </Text>
       <Button
         mt={2}
         sx={{ borderRadius: 100, px: 6 }}
         onClick={() => onClose?.(true)}
       >
-        Done
+        {strings.done()}
       </Button>
     </Flex>
   );
@@ -810,7 +795,7 @@ function VerifyAuthenticatorForm(props: VerifyAuthenticatorFormProps) {
         id="code"
         name="code"
         helpText={codeHelpText}
-        label="Enter the 6-digit code"
+        label={strings.enterSixDigitCode()}
         sx={{ alignItems: "center", mt: 2 }}
         required
         placeholder="010101"

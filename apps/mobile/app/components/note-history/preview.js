@@ -17,47 +17,53 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import React from "react";
+import { useThemeColors } from "@notesnook/theme";
+import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { db } from "../../common/database";
-import Editor from "../../screens/editor";
-import EditorOverlay from "../../screens/editor/loading";
+import { ReadonlyEditor } from "../../screens/editor/readonly-editor";
+import { useTabStore } from "../../screens/editor/tiptap/use-tab-store";
 import { editorController } from "../../screens/editor/tiptap/utils";
-import { eSendEvent, ToastEvent } from "../../services/event-manager";
+import { ToastManager, eSendEvent } from "../../services/event-manager";
 import Navigation from "../../services/navigation";
-import { useEditorStore } from "../../stores/use-editor-store";
 import { useSelectionStore } from "../../stores/use-selection-store";
-import { useThemeColors } from "@notesnook/theme";
 import { useTrashStore } from "../../stores/use-trash-store";
 import { eCloseSheet, eOnLoadNote } from "../../utils/events";
-import { sleep } from "../../utils/time";
 import { Dialog } from "../dialog";
 import DialogHeader from "../dialog/dialog-header";
 import { presentDialog } from "../dialog/functions";
 import { Button } from "../ui/button";
 import Paragraph from "../ui/typography/paragraph";
+import { diff } from "diffblazer";
+import { strings } from "@notesnook/intl";
 
+/**
+ *
+ * @param {any} param0
+ * @returns
+ */
 export default function NotePreview({ session, content, note }) {
   const { colors } = useThemeColors();
-  const editorId = ":noteHistory";
+  const [locked, setLocked] = useState(false);
 
   async function restore() {
     if (note && note.type === "trash") {
-      await db.trash.restore(note.id);
+      if ((await db.trash.restore(note.id)) === false) return;
       Navigation.queueRoutesForUpdate();
       useSelectionStore.getState().setSelectionMode(false);
-      ToastEvent.show({
-        heading: "Restore successful",
+      ToastManager.show({
+        heading: strings.noteRestored(),
         type: "success"
       });
       eSendEvent(eCloseSheet);
       return;
     }
     await db.noteHistory.restore(session.id);
-    if (useEditorStore.getState()?.currentEditingNote === session?.noteId) {
-      if (editorController.current?.note) {
+    if (useTabStore.getState().hasTabForNote(session?.noteId)) {
+      const note = editorController.current.note.current[session?.noteId];
+      if (note) {
         eSendEvent(eOnLoadNote, {
-          ...editorController.current?.note,
+          item: note,
           forced: true
         });
       }
@@ -66,25 +72,29 @@ export default function NotePreview({ session, content, note }) {
     eSendEvent(eCloseSheet);
     Navigation.queueRoutesForUpdate();
 
-    ToastEvent.show({
-      heading: "Note restored successfully",
+    ToastManager.show({
+      heading: strings.noteRestoredFromHistory(),
       type: "success"
     });
   }
 
+  useEffect(() => {
+    db.vaults.itemExists(note).then((locked) => setLocked(locked));
+  }, [note]);
+
   const deleteNote = async () => {
     presentDialog({
-      title: `Delete note permanently`,
-      paragraph: `Are you sure you want to delete this note from trash permanentaly`,
-      positiveText: "Delete",
-      negativeText: "Cancel",
+      title: strings.deleteNote(),
+      paragraph: strings.deleteNoteConfirmation(),
+      positiveText: strings.delete(),
+      negativeText: strings.cancel(),
       context: "local",
       positivePress: async () => {
         await db.trash.delete(note.id);
-        useTrashStore.getState().setTrash();
+        useTrashStore.getState().refresh();
         useSelectionStore.getState().setSelectionMode(false);
-        ToastEvent.show({
-          heading: "Permanently deleted items",
+        ToastManager.show({
+          heading: strings.noteDeleted(),
           type: "success",
           context: "local"
         });
@@ -97,32 +107,37 @@ export default function NotePreview({ session, content, note }) {
   return (
     <View
       style={{
-        height: note?.locked || session?.locked ? null : 600,
+        height: locked || session?.locked ? null : 600,
         width: "100%"
       }}
     >
       <Dialog context="local" />
       <DialogHeader padding={12} title={note?.title || session?.session} />
-      {!session?.locked && !note?.locked ? (
+      {!session?.locked && !locked ? (
         <View
           style={{
             flex: 1
           }}
         >
-          <Editor
-            noHeader
-            noToolbar
-            readonly
-            editorId={editorId}
-            onLoad={async () => {
-              const _note = note || db.notes.note(session?.noteId)?.data;
-              eSendEvent(eOnLoadNote + editorId, {
-                ..._note,
-                content: {
-                  ...content,
-                  isPreview: true
+          <ReadonlyEditor
+            editorId="historyPreview"
+            onLoad={async (loadContent) => {
+              try {
+                if (content.data) {
+                  const _note = note || (await db.notes.note(session?.noteId));
+                  const currentContent = await db.content.get(_note.contentId);
+                  loadContent({
+                    data: diff(currentContent.data, content.data),
+                    id: _note.id
+                  });
                 }
-              });
+              } catch (e) {
+                ToastManager.error(
+                  e,
+                  "Failed to load history preview",
+                  "local"
+                );
+              }
             }}
           />
         </View>
@@ -136,7 +151,7 @@ export default function NotePreview({ session, content, note }) {
           }}
         >
           <Paragraph color={colors.secondary.paragraph}>
-            Preview not available, content is encrypted.
+            {strings.encryptedNoteHistoryNotice()}
           </Paragraph>
         </View>
       )}
@@ -146,10 +161,15 @@ export default function NotePreview({ session, content, note }) {
           paddingHorizontal: 12
         }}
       >
-        <Button onPress={restore} title="Restore" type="accent" width="100%" />
+        <Button
+          onPress={restore}
+          title={strings.restore()}
+          type="accent"
+          width="100%"
+        />
         <Button
           onPress={deleteNote}
-          title="Delete permanently"
+          title={strings.deletePermanently()}
           type="error"
           width="100%"
           style={{

@@ -18,25 +18,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useEffect, useRef } from "react";
-import { showPopup } from "../../../components/popup-presenter";
-import { Editor } from "../../../types";
-import { NodeWithOffset } from "../../../utils/prosemirror";
-import { FloatingMenuProps } from "../types";
-import { LinkHoverPopupHandler } from "./link";
+import { showPopup } from "../../../components/popup-presenter/index.js";
+import { Editor } from "../../../types.js";
+import { FloatingMenuProps } from "../types.js";
+import { LinkHoverPopupHandler } from "./link.js";
+import { HoverPopupContextProvider } from "./context.js";
 
 export type HoverPopupProps = {
   editor: Editor;
-  selectedNode: NodeWithOffset;
 };
 
 const handlers = [LinkHoverPopupHandler];
 
-const HOVER_TIMEOUT = 500;
+const HOVER_TIMEOUT = 1000;
 
 export function HoverPopupHandler(props: FloatingMenuProps) {
   const { editor } = props;
   const hoverTimeoutId = useRef<number>();
   const activePopup = useRef<{ element: HTMLElement; hide: () => void }>();
+
+  useEffect(() => {
+    function onDestroy() {
+      activePopup.current?.hide();
+    }
+    editor.on("destroy", onDestroy);
+    return () => {
+      editor.off("destroy", onDestroy);
+    };
+  }, []);
 
   useEffect(
     () => {
@@ -68,32 +77,46 @@ export function HoverPopupHandler(props: FloatingMenuProps) {
         hoverTimeoutId.current = setTimeout(
           () => {
             const PopupHandler = handlers.find((h) => h.isActive(element));
-            if (!PopupHandler || !editor.current) return;
+            if (
+              !PopupHandler ||
+              !editor ||
+              !editor.view ||
+              editor.view.isDestroyed
+            )
+              return;
 
             const { popup: Popup } = PopupHandler;
-            const pos = editor.current.view.posAtDOM(element, 0);
-            const node = editor.current.view.state.doc.nodeAt(pos);
 
+            const pos = editor.view.posAtDOM(element, 0);
+            if (pos < 0) return;
+
+            const node = editor.view.state.doc.nodeAt(pos);
             if (!node) return;
 
             const hidePopup = showPopup({
               popup: () => (
-                <Popup
-                  editor={editor}
-                  selectedNode={{
-                    node,
-                    from: pos,
-                    to: pos + node.nodeSize
+                <HoverPopupContextProvider
+                  value={{
+                    selectedNode: {
+                      node,
+                      from: pos,
+                      to: pos + node.nodeSize
+                    },
+                    hide: () => hidePopup()
                   }}
-                />
+                >
+                  <Popup editor={editor} />
+                </HoverPopupContextProvider>
               ),
               blocking: false,
               focusOnRender: false,
               position: {
-                target: element,
-                align: "center",
+                target: "mouse",
+                align: "start",
                 location: "top",
-                isTargetAbsolute: true
+                isTargetAbsolute: true,
+                yOffset: 10,
+                xOffset: -30
               }
             });
             activePopup.current = { element, hide: hidePopup };

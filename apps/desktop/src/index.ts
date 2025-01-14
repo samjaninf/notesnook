@@ -17,6 +17,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-export * from "./constants";
+export { PATHS } from "./constants";
 export type { AppRouter } from "./api";
 export { type UpdateInfo } from "builder-util-runtime";
+export { type DesktopIntegration } from "./utils/config";
+export { SQLite } from "./api/sqlite-kysely.js";

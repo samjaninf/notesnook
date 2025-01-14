@@ -27,13 +27,8 @@ type PositionData = {
 };
 
 const mousePosition: PositionData = { x: 0, y: 0, actualX: 0, actualY: 0 };
-window.addEventListener("mousemove", (e) => {
-  const { x, y, actualX, actualY } = getMousePosition(e);
-  mousePosition.x = x;
-  mousePosition.y = y;
-  mousePosition.actualX = actualX;
-  mousePosition.actualY = actualY;
-});
+let mouseMoveListenerAttached = false;
+attachMouseMoveListener();
 
 export type PositionOptions = {
   target?: HTMLElement | "mouse" | null;
@@ -49,6 +44,8 @@ export function getPosition(
   node: Node,
   options: PositionOptions
 ): { top: number; left: number } {
+  attachMouseMoveListener();
+
   let element: HTMLElement;
   if (node instanceof HTMLElement) {
     element = node;
@@ -179,4 +176,16 @@ export function getElementPosition(
   }
 
   return position;
+}
+
+function attachMouseMoveListener() {
+  if (mouseMoveListenerAttached || !("window" in globalThis)) return;
+  window.addEventListener("mousemove", (e) => {
+    const { x, y, actualX, actualY } = getMousePosition(e);
+    mousePosition.x = x;
+    mousePosition.y = y;
+    mousePosition.actualX = actualX;
+    mousePosition.actualY = actualY;
+  });
+  mouseMoveListenerAttached = true;
 }

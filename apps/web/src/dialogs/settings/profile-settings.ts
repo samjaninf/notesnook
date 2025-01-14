@@ -17,147 +17,177 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import {
-  useStore as useUserStore,
-  store as userstore
-} from "../../stores/user-store";
-import { SettingsGroup } from "./types";
-import {
-  showAttachmentsDialog,
-  showClearSessionsConfirmation,
-  showEmailChangeDialog,
-  showLoadingDialog,
-  showLogoutConfirmation,
-  showPasswordDialog,
-  showRecoveryKeyDialog
-} from "../../common/dialog-controller";
+import { strings } from "@notesnook/intl";
+import { createBackup, verifyAccount } from "../../common";
 import { db } from "../../common/db";
+import { TaskManager } from "../../common/task-manager";
+import { showPasswordDialog } from "../../dialogs/password-dialog";
+import { useStore as useUserStore } from "../../stores/user-store";
+import { logger } from "../../utils/logger";
 import { showToast } from "../../utils/toast";
+import { AttachmentsDialog } from "../attachments-dialog";
+import {
+  ConfirmDialog,
+  showClearSessionsConfirmation,
+  showLogoutConfirmation
+} from "../confirm";
+import { EmailChangeDialog } from "../email-change-dialog";
+import { RecoveryKeyDialog } from "../recovery-key-dialog";
 import { UserProfile } from "./components/user-profile";
-import { verifyAccount } from "../../common";
+import { SettingsGroup } from "./types";
 
 export const ProfileSettings: SettingsGroup[] = [
   {
     key: "user-profile",
     section: "profile",
     header: UserProfile,
+    onStateChange(listener) {
+      return useUserStore.subscribe((s) => s.isLoggedIn, listener);
+    },
     settings: [
       {
         key: "email",
-        title: "Email",
-        description: "Set a new email for your account",
-        keywords: ["change email", "new email"],
+        title: strings.changeEmail(),
+        description: strings.changeEmailDesc(),
+        keywords: [strings.changeEmail(), strings.newEmail()],
         isHidden: () => !useUserStore.getState().isLoggedIn,
         components: [
           {
             type: "button",
-            title: "Change email",
+            title: strings.changeEmail(),
             variant: "secondary",
-            action: showEmailChangeDialog
+            action: () => EmailChangeDialog.show({})
           }
         ]
       },
       {
         key: "manage-attachments",
-        title: "Attachments",
-        description: "Manage all your attachments in one place.",
-        isHidden: () => !useUserStore.getState().isLoggedIn,
+        title: strings.attachments(),
+        description: strings.manageAttachments(),
         components: [
           {
             type: "button",
-            title: "Open manager",
+            title: strings.open(),
             variant: "secondary",
-            action: showAttachmentsDialog
+            action: () => AttachmentsDialog.show({})
           }
         ]
       },
       {
         key: "recovery-key",
-        title: "Recovery key",
-        description:
-          "In case you lose your password, this data recovery key is the only way to recovery your data.",
-        keywords: ["data recovery key", "lose your password", "backup"],
-        isHidden: () => !userstore.get().isLoggedIn,
+        title: strings.saveDataRecoveryKey(),
+        description: strings.saveDataRecoveryKeyDesc(),
+        keywords: ["data recovery", "lost your password", "backup"],
+        isHidden: () => !useUserStore.getState().isLoggedIn,
         components: [
           {
             type: "button",
-            title: "Backup your recovery key",
+            title: strings.save(),
             variant: "secondary",
             action: async () => {
-              if (await verifyAccount()) await showRecoveryKeyDialog();
+              if (await verifyAccount()) await RecoveryKeyDialog.show({});
             }
           }
         ]
       },
       {
         key: "account-removal",
-        title: "Account removal",
-        description:
-          "Permanently delete your account clearing all data including your notes, notebooks, and attachments.",
-        keywords: ["delete account", "clear data"],
-        isHidden: () => !userstore.get().isLoggedIn,
+        title: strings.deleteAccount(),
+        description: strings.deleteAccountDesc(),
+        keywords: [strings.deleteAccount(), strings.clear()],
+        isHidden: () => !useUserStore.getState().isLoggedIn,
         components: [
           {
             type: "button",
             variant: "error",
-            title: "Delete account",
-            action: async () =>
-              showPasswordDialog("delete_account", async ({ password }) => {
-                await db.user?.deleteUser(password);
-                return true;
+            title: strings.deleteAccount(),
+            action: () =>
+              showPasswordDialog({
+                title: strings.deleteAccount(),
+                message: strings.deleteAccountDesc(),
+                inputs: {
+                  password: {
+                    label: strings.password(),
+                    autoComplete: "current-password"
+                  }
+                },
+                validate: async ({ password }) => {
+                  await db.user.deleteUser(password);
+                  return true;
+                }
               })
           }
         ]
       }
     ]
   },
+
   {
     key: "user-sessions",
     section: "profile",
-    header: "Sessions",
-    isHidden: () => !userstore.get().isLoggedIn,
+    header: strings.sessions(),
+    onStateChange(listener) {
+      return useUserStore.subscribe((s) => s.isLoggedIn, listener);
+    },
+    isHidden: () => !useUserStore.getState().isLoggedIn,
     settings: [
       {
         key: "logout",
-        title: "Logout",
-        description: "Logging out will clear all data on this device.",
+        title: strings.logout(),
+        description: strings.logoutDesc(),
         keywords: [],
         components: [
           {
             type: "button",
             variant: "errorSecondary",
-            title: "Logout",
+            title: strings.logout(),
             action: async () => {
-              if (await showLogoutConfirmation()) {
-                await showLoadingDialog({
-                  title: "You are being logged out",
-                  subtitle: "Please wait...",
-                  action: () => db.user?.logout(true)
-                });
-                showToast("success", "You have been logged out.");
+              const result = await showLogoutConfirmation();
+              if (!result) return;
+
+              if (result.backup) {
+                try {
+                  await createBackup({ mode: "partial" });
+                } catch (e) {
+                  logger.error(e, "Failed to take backup before logout");
+                  if (
+                    !(await ConfirmDialog.show({
+                      title: strings.failedToTakeBackup(),
+                      message: strings.failedToTakeBackupMessage(),
+                      negativeButtonText: strings.no(),
+                      positiveButtonText: strings.yes()
+                    }))
+                  )
+                    return;
+                }
               }
+
+              await TaskManager.startTask({
+                type: "modal",
+                title: strings.loggingOut(),
+                subtitle: strings.pleaseWait(),
+                action: () => db.user.logout(true)
+              });
+              showToast("success", strings.loggedOut());
             }
           }
         ]
       },
       {
         key: "logout-all-sessions",
-        title: "Log out from all other devices",
-        description: "Force logout from all your other logged in devices.",
-        keywords: ["clear sessions"],
+        title: strings.logoutAllOtherDevices(),
+        description: strings.logoutAllOtherDevicesDescription(),
+        keywords: [strings.clearSessions()],
         components: [
           {
             type: "button",
             variant: "errorSecondary",
-            title: "Log out all other devices",
+            title: strings.logoutAllOtherDevices(),
             action: async () => {
               if (!(await showClearSessionsConfirmation())) return;
 
-              await db.user?.clearSessions();
-              showToast(
-                "success",
-                "You have been logged out from all other devices."
-              );
+              await db.user.clearSessions();
+              showToast("success", strings.loggedOutAllOtherDevices());
             }
           }
         ]

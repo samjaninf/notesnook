@@ -26,25 +26,24 @@ import {
   MfaSms,
   MfaEmail,
   MfaRecoveryCode,
-  Icon
+  Icon,
+  Warn
 } from "../components/icons";
-import Field from "../components/field";
+import Field, { FieldProps } from "../components/field";
 import { getQueryParams, hardNavigate, makeURL } from "../navigation";
 import { store as userstore } from "../stores/user-store";
 import { db } from "../common/db";
 import Config from "../utils/config";
-import useDatabase from "../hooks/use-database";
 import { Loader } from "../components/loader";
 import { showToast } from "../utils/toast";
 import AuthContainer from "../components/auth-container";
-
 import { useTimer } from "../hooks/use-timer";
-import { AuthenticatorType } from "../dialogs/mfa/types";
-import {
-  showLoadingDialog,
-  showLogoutConfirmation
-} from "../common/dialog-controller";
 import { ErrorText } from "../components/error-text";
+import { AuthenticatorType, User } from "@notesnook/core";
+import { showLogoutConfirmation } from "../dialogs/confirm";
+import { TaskManager } from "../common/task-manager";
+import { strings } from "@notesnook/intl";
+import { ScrollContainer } from "@notesnook/ui";
 
 type EmailFormData = {
   email: string;
@@ -55,8 +54,8 @@ type PasswordFormData = EmailFormData & {
 };
 
 type MFALoginFormData = {
-  code?: string;
-  method?: MFAMethodType;
+  code: string;
+  method: MFAMethodType;
 };
 
 type SignupFormData = EmailFormData &
@@ -99,11 +98,17 @@ type BaseFormData =
   | AccountRecoveryFormData
   | SignupFormData;
 
+type OpenURLFunction = (
+  url: string,
+  context?: { authenticated: boolean }
+) => void;
 type NavigateFunction = <TRoute extends AuthRoutes>(
   route: TRoute,
   formData?: AuthFormData[TRoute]
 ) => void;
 type BaseAuthComponentProps<TRoute extends AuthRoutes> = {
+  canSkip?: boolean;
+  openURL: OpenURLFunction;
   navigate: NavigateFunction;
   formData?: AuthFormData[TRoute];
 };
@@ -115,7 +120,12 @@ type AuthRoutes =
   | "recover"
   | "mfa:code"
   | "mfa:select";
-export type AuthProps = { route: AuthRoutes };
+export type AuthProps = {
+  route: AuthRoutes;
+  isolated?: boolean;
+  canSkip?: boolean;
+  openURL?: OpenURLFunction;
+};
 
 type AuthComponent<TRoute extends AuthRoutes> = (
   props: BaseAuthComponentProps<TRoute>
@@ -163,6 +173,16 @@ const authorizedRoutes: AuthRoutes[] = [
 ];
 
 function Auth(props: AuthProps) {
+  return (
+    <AuthContainer>
+      <HeadlessAuth {...props} />
+    </AuthContainer>
+  );
+}
+export default Auth;
+
+export function HeadlessAuth(props: AuthProps) {
+  const { openURL = _openURL, isolated } = props;
   const [route, setRoute] = useState(props.route);
   const [isReady, setIsReady] = useState(false);
   const [storedFormData, setStoredFormData] = useState<
@@ -170,64 +190,65 @@ function Auth(props: AuthProps) {
   >();
   const Route = useMemo(() => getRouteComponent(route), [route]);
   useEffect(() => {
+    if (isolated) return;
     window.history.replaceState({}, "", makeURL(routePaths[route]));
-  }, [route]);
-
-  const [isAppLoaded] = useDatabase();
+  }, [route, isolated]);
 
   useEffect(() => {
-    if (!isAppLoaded) return;
-    db.user?.getUser().then((user) => {
+    db.user.getUser().then((user) => {
       if (user && authorizedRoutes.includes(route) && !isSessionExpired())
-        return openURL("/");
+        return openURL("/", { authenticated: true });
+      performance.mark("load:auth");
       setIsReady(true);
     });
-  }, [isAppLoaded, route]);
+  }, [route, openURL]);
 
   if (!isReady) return <></>;
 
   return (
-    <AuthContainer>
-      <Flex
-        sx={{
-          zIndex: 1,
-          flex: 1,
-          overflowY: "auto",
-          flexDirection: "column"
-        }}
-      >
-        {Route && (
-          <Route
-            navigate={(route, formData) => {
-              setStoredFormData(formData);
-              setRoute(route);
-            }}
-            formData={storedFormData}
-          />
-        )}
-      </Flex>
-    </AuthContainer>
+    <ScrollContainer
+      className="auth-scroll-container"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 1,
+        flex: 1,
+        flexShrink: 0
+      }}
+    >
+      {Route && (
+        <Route
+          openURL={openURL}
+          canSkip={props.canSkip}
+          navigate={(route, formData) => {
+            setStoredFormData(formData);
+            setRoute(route);
+          }}
+          formData={storedFormData}
+        />
+      )}
+    </ScrollContainer>
   );
 }
-export default Auth;
 
 function LoginEmail(props: BaseAuthComponentProps<"login:email">) {
-  const { navigate } = props;
+  const { navigate, canSkip = true, openURL } = props;
 
   return (
     <AuthForm
       type="login:email"
-      title="Welcome back!"
-      canSkip
+      title={strings.welcomeBack()}
+      canSkip={canSkip}
+      openURL={openURL}
       subtitle={
         <SubtitleWithAction
-          text="Don't have an account?"
-          action={{ text: "Sign up", onClick: () => navigate("signup") }}
+          text={strings.dontHaveAccount()}
+          action={{ text: strings.signUp(), onClick: () => navigate("signup") }}
         />
       }
       loading={{
-        title: "Verifying your email",
-        subtitle: "Please wait while you are authenticated."
+        title: strings.verifyingEmail(),
+        subtitle: strings.authWait()
       }}
       onSubmit={async (form) => {
         const { primaryMethod, phoneNumber, secondaryMethod } =
@@ -244,15 +265,27 @@ function LoginEmail(props: BaseAuthComponentProps<"login:email">) {
     >
       {(form?: EmailFormData) => (
         <>
+          {IS_BETA ? (
+            <Flex
+              bg="background"
+              p={2}
+              sx={{ borderRadius: "default", alignItems: "start" }}
+            >
+              <Warn size={16} color="icon-error" />
+              <Text variant="body" ml={1}>
+                {strings.betaLoginNotice()}
+              </Text>
+            </Flex>
+          ) : null}
           <AuthField
             id="email"
             type="email"
             autoComplete="email"
-            label="Enter email"
+            label={strings.enterEmailAddress()}
             autoFocus
             defaultValue={form?.email}
           />
-          <SubmitButton text="Continue" />
+          <SubmitButton text={strings.continue()} />
         </>
       )}
     </AuthForm>
@@ -260,23 +293,24 @@ function LoginEmail(props: BaseAuthComponentProps<"login:email">) {
 }
 
 function LoginPassword(props: BaseAuthComponentProps<"login:password">) {
-  const { navigate, formData } = props;
+  const { navigate, formData, openURL } = props;
 
   if (!formData) {
-    openURL("/");
+    openURL("/", { authenticated: false });
     return null;
   }
 
   return (
     <AuthForm
       type="login:password"
-      title="Your account password"
-      subtitle={"Your password is always hashed before leaving this device."}
+      title={strings.accountPassword()}
+      subtitle={strings.accountPassDesc()}
       loadForever
       loading={{
-        title: "Logging you in",
-        subtitle: "Please wait while you are authenticated."
+        title: strings.loggingIn(),
+        subtitle: strings.authWait()
       }}
+      openURL={openURL}
       onSubmit={async (form) => {
         await userstore.login(
           {
@@ -287,7 +321,7 @@ function LoginPassword(props: BaseAuthComponentProps<"login:password">) {
           Config.get("sessionExpired", false)
         );
         Config.set("sessionExpired", false);
-        openURL("/");
+        openURL("/", { authenticated: true });
       }}
     >
       {(form?: PasswordFormData) => (
@@ -296,7 +330,7 @@ function LoginPassword(props: BaseAuthComponentProps<"login:password">) {
             id="password"
             type="password"
             autoComplete="current-password"
-            label="Enter password"
+            label={strings.enterPassword()}
             autoFocus
             defaultValue={form?.password}
           />
@@ -308,9 +342,9 @@ function LoginPassword(props: BaseAuthComponentProps<"login:password">) {
             onClick={() => navigate("recover", { email: formData.email })}
             sx={{ color: "paragraph", alignSelf: "end" }}
           >
-            Forgot password?
+            {strings.forgotPassword()}
           </Button>
-          <SubmitButton text="Login to your account" />
+          <SubmitButton text={strings.loginToYourAccount()} />
         </>
       )}
     </AuthForm>
@@ -318,30 +352,34 @@ function LoginPassword(props: BaseAuthComponentProps<"login:password">) {
 }
 
 function Signup(props: BaseAuthComponentProps<"signup">) {
-  const { navigate } = props;
+  const { navigate, canSkip = true, openURL } = props;
 
   return (
     <AuthForm
       type="signup"
-      title="Create an account"
-      canSkip
+      title={strings.createAccount()}
+      canSkip={canSkip}
       subtitle={
         <SubtitleWithAction
-          text="Already have an account?"
-          action={{ text: "Log in", onClick: () => navigate("login:email") }}
+          text={strings.alreadyHaveAccount()}
+          action={{
+            text: strings.login(),
+            onClick: () => navigate("login:email")
+          }}
         />
       }
       loading={{
-        title: "Creating your account",
-        subtitle: "Please wait while we finalize your account."
+        title: strings.creatingAccount(),
+        subtitle: strings.creatingAccountDesc()
       }}
+      openURL={openURL}
       onSubmit={async (form) => {
         if (form.password !== form["confirm-password"]) {
-          throw new Error("Passwords do not match.");
+          throw new Error(strings.passwordNotMatched());
         }
 
         await userstore.signup(form);
-        openURL("/notes/#/welcome");
+        openURL("/notes/#/welcome", { authenticated: true });
       }}
     >
       {(form?: SignupFormData) => (
@@ -350,7 +388,7 @@ function Signup(props: BaseAuthComponentProps<"signup">) {
             id="email"
             type="email"
             autoComplete="email"
-            label="Enter email"
+            label={strings.enterEmailAddress()}
             autoFocus
             defaultValue={form?.email}
           />
@@ -358,41 +396,40 @@ function Signup(props: BaseAuthComponentProps<"signup">) {
             id="password"
             type="password"
             autoComplete="new-password"
-            label="Set password"
+            label={strings.newPassword()}
             defaultValue={form?.password}
           />
           <AuthField
             id="confirm-password"
             type="password"
             autoComplete="new-password"
-            label="Confirm password"
+            label={strings.confirmPassword()}
             defaultValue={form?.["confirm-password"]}
           />
-          <SubmitButton text="Create account" />
+          <SubmitButton text={strings.createAccount()} />
           <Text
             mt={4}
             variant="subBody"
             sx={{ fontSize: 13, textAlign: "center" }}
           >
-            By pressing {`"Create account" button, you agree to our`}{" "}
+            {strings.signupAgreement[0]()}{" "}
             <Link
               target="_blank"
               rel="noreferrer"
               href="https://notesnook.com/tos"
               sx={{ color: "accent" }}
             >
-              Terms of Service
+              {strings.signupAgreement[1]()}
             </Link>{" "}
-            &amp;{" "}
+            {strings.signupAgreement[2]()}{" "}
             <Link
               rel="noreferrer"
               href="https://notesnook.com/privacy"
               sx={{ color: "accent" }}
             >
-              Privacy Policy
+              {strings.signupAgreement[3]()}
             </Link>
-            . You also agree to receiving marketing emails from us which you can
-            opt-out of from the app settings.
+            . {strings.signupAgreement[4]()}
           </Text>
         </>
       )}
@@ -401,40 +438,37 @@ function Signup(props: BaseAuthComponentProps<"signup">) {
 }
 
 function SessionExpiry(props: BaseAuthComponentProps<"sessionExpiry">) {
-  const { navigate } = props;
+  const { navigate, openURL } = props;
   const [user, setUser] = useState<User | undefined>();
 
   useEffect(() => {
     (async () => {
-      const user = await db.user?.getUser();
+      const user = await db.user.getUser();
       if (user && isSessionExpired()) {
         setUser(user);
       } else if (!user) {
         Config.set("sessionExpired", false);
-        openURL("/login");
-      } else openURL("/");
+        navigate("login:email");
+      } else openURL("/", { authenticated: true });
     })();
-  }, []);
+  }, [navigate, openURL]);
 
   return (
     <AuthForm
       type="sessionExpiry"
-      title="Your session has expired"
+      title={strings.sessionExpired()}
       subtitle={
         <Flex bg="shade" p={1} sx={{ borderRadius: "default" }}>
           <Text as="span" sx={{ fontSize: "body", color: "accent" }}>
-            <b>
-              All your local changes are safe and will be synced after you
-              login.
-            </b>{" "}
-            Please enter your password to continue.
+            {strings.sessionExpiredDesc(user?.email as string)}
           </Text>
         </Flex>
       }
       loading={{
-        title: "Logging you in",
-        subtitle: "Please wait while you are authenticated."
+        title: strings.loggingIn(),
+        subtitle: strings.pleaseWaitLogin()
       }}
+      openURL={openURL}
       onSubmit={async () => {
         if (!user) return;
 
@@ -454,7 +488,7 @@ function SessionExpiry(props: BaseAuthComponentProps<"sessionExpiry">) {
         id="email"
         type="email"
         autoComplete={"false"}
-        label="Enter email"
+        label={strings.enterEmailAddress()}
         placeholder={user ? maskEmail(user.email) : undefined}
         autoFocus
         disabled
@@ -467,9 +501,9 @@ function SessionExpiry(props: BaseAuthComponentProps<"sessionExpiry">) {
         onClick={() => user && navigate("recover", { email: user.email })}
         sx={{ color: "paragraph", alignSelf: "end" }}
       >
-        Forgot password?
+        {strings.forgotPassword()}
       </Button>
-      <SubmitButton text="Relogin to your account" />
+      <SubmitButton text={strings.reloginToYourAccount()} />
       <Button
         type="button"
         variant="anchor"
@@ -483,54 +517,57 @@ function SessionExpiry(props: BaseAuthComponentProps<"sessionExpiry">) {
         }}
         onClick={async () => {
           if (await showLogoutConfirmation()) {
-            await showLoadingDialog({
-              title: "You are being logged out",
-              action: () => db.user?.logout(true),
-              subtitle: "Please wait..."
+            await TaskManager.startTask({
+              type: "modal",
+              title: strings.loggingOut(),
+              action: () => db.user.logout(true),
+              subtitle: strings.loggingOutDesc()
             });
-            openURL("/login");
+            navigate("login:email");
           }
         }}
       >
-        Logout permanently
+        {strings.logout()}
       </Button>
     </AuthForm>
   );
 }
 
 function AccountRecovery(props: BaseAuthComponentProps<"recover">) {
-  const { navigate, formData } = props;
+  const { navigate, formData, openURL } = props;
   const [success, setSuccess] = useState<string>();
 
   return (
     <AuthForm
       type="recover"
-      title="Recover your account"
+      title={strings.accountRecovery()}
       subtitle={
         <SubtitleWithAction
-          text="Remembered your password?"
-          action={{ text: "Log in", onClick: () => navigate("login:email") }}
+          text={strings.rememberedYourPassword()}
+          action={{
+            text: strings.login(),
+            onClick: () => navigate("login:email")
+          }}
         />
       }
       loading={{
-        title: "Sending recovery email",
-        subtitle: "Please wait while we send you recovery instructions."
+        title: strings.sendingRecoveryEmail(),
+        subtitle: strings.sendingRecoveryEmailDesc()
       }}
+      openURL={openURL}
       onSubmit={async (form) => {
         if (!form.email) {
           setSuccess(undefined);
           return;
         }
 
-        const url = await db.user?.recoverAccount(form.email.toLowerCase());
+        const url = await db.user.recoverAccount(form.email.toLowerCase());
         console.log(url);
         if (IS_TESTING) {
           window.open(url, "_self");
           return;
         }
-        setSuccess(
-          `Recovery email sent. Please check your inbox (and spam folder) for further instructions.`
-        );
+        setSuccess(strings.recoveryEmailSentDesc());
       }}
     >
       {success ? (
@@ -541,7 +578,7 @@ function AccountRecovery(props: BaseAuthComponentProps<"recover">) {
               {success}
             </Text>
           </Flex>
-          <SubmitButton text="Send again" />
+          <SubmitButton text={strings.confirmEmail()} />
         </>
       ) : (
         <>
@@ -549,12 +586,12 @@ function AccountRecovery(props: BaseAuthComponentProps<"recover">) {
             id="email"
             type="email"
             autoComplete={"email"}
-            label="Enter your account email"
-            helpText="You will receive instructions on how to recover your account on this email"
+            label={strings.enterEmailAddress()}
+            helpText={strings.accountRecoverHelpText()}
             defaultValue={formData ? formData.email : ""}
             autoFocus
           />
-          <SubmitButton text="Send recovery email" />
+          <SubmitButton text={strings.sendRecoveryEmail()} />
         </>
       )}
     </AuthForm>
@@ -564,38 +601,34 @@ function AccountRecovery(props: BaseAuthComponentProps<"recover">) {
 function getTexts(formData: MFAFormData) {
   return {
     app: {
-      subtitle:
-        "Please confirm your identity by entering the authentication code from your authenticator app.",
-      instructions: `Open the two-factor authentication (TOTP) app to view your authentication code.`,
-      selector: `Don't have access to your authenticator app?`,
-      label: "Enter 6-digit code"
+      subtitle: strings.mfaAuthAppSubtitle(),
+      instructions: strings.mfaAuthAppInstructions(),
+      selector: strings.mfaAuthAppSelector(),
+      label: strings.enterSixDigitCode()
     },
     email: {
-      subtitle:
-        "Please confirm your identity by entering the authentication code sent to your email address.",
-      instructions: `It may take a minute to receive your code.`,
-      selector: `Don't have access to your email address?`,
-      label: "Enter 6-digit code"
+      subtitle: strings.mfaEmailSubtitle(),
+      instructions: strings.mfaEmailInstructions(),
+      selector: strings.mfaEmailSelector(),
+      label: strings.enterSixDigitCode()
     },
     sms: {
-      subtitle: `Please confirm your identity by entering the authentication code sent to ${
-        formData.phoneNumber || "your registered phone number."
-      }.`,
-      instructions: `It may take a minute to receive your code.`,
-      selector: `Don't have access to your phone number?`,
-      label: "Enter 6-digit code"
+      subtitle: strings.mfaSmsSubtitle(formData.phoneNumber),
+      instructions: strings.mfaSmsInstructions(),
+      selector: strings.mfaSmsSelector(),
+      label: strings.enterSixDigitCode()
     },
     recoveryCode: {
-      subtitle: `Please confirm your identity by entering a recovery code.`,
+      subtitle: strings.mfaRecoveryCodeSubtitle(),
       instructions: "",
-      selector: `Don't have your recovery codes?`,
-      label: "Enter recovery code"
+      selector: strings.mfaRecoveryCodeSelector(),
+      label: strings.enterRecoveryCode()
     }
   };
 }
 
 function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
-  const { navigate, formData } = props;
+  const { navigate, formData, openURL } = props;
   const [isSending, setIsSending] = useState(false);
   const { elapsed, enabled, setEnabled } = useTimer(
     `2fa.${formData?.primaryMethod}`,
@@ -606,7 +639,7 @@ function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
     async (selectedMethod: "sms" | "email") => {
       setIsSending(true);
       try {
-        await db.mfa?.sendCode(selectedMethod);
+        await db.mfa.sendCode(selectedMethod);
         setEnabled(false);
       } catch (e) {
         const error = e as Error;
@@ -634,7 +667,7 @@ function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
   }, [formData, sendCode]);
 
   if (!formData) {
-    openURL("/");
+    openURL("/", { authenticated: false });
     return null;
   }
 
@@ -646,13 +679,16 @@ function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
   return (
     <AuthForm
       type="mfa:code"
-      title="Two-factor authentication"
+      title={strings["2fa"]()}
       subtitle={texts.subtitle}
       loading={{
-        title: "Verifying 2FA code",
-        subtitle: "Please wait while you are authenticated."
+        title: strings.verifying2faCode(),
+        subtitle: strings.authWait()
       }}
+      openURL={openURL}
       onSubmit={async (form) => {
+        if (!form.code) throw new Error(strings.coreRequired());
+
         const loginForm: MFALoginFormData = {
           code: form.code,
           method: formData.selectedMethod
@@ -683,9 +719,9 @@ function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
                     {isSending ? (
                       <Loading size={18} />
                     ) : enabled ? (
-                      `Resend code`
+                      strings.resendCode()
                     ) : (
-                      `Resend in ${elapsed}`
+                      strings.resendCode(elapsed)
                     )}
                   </Text>
                 ),
@@ -696,7 +732,7 @@ function MFACode(props: BaseAuthComponentProps<"mfa:code">) {
             : undefined
         }
       />
-      <SubmitButton text="Submit" />
+      <SubmitButton text={strings.submit()} />
       <Button
         type="button"
         mt={4}
@@ -717,13 +753,13 @@ type MFAMethod = {
   icon: Icon;
 };
 const MFAMethods: MFAMethod[] = [
-  { type: "app", title: "Use an authenticator app", icon: MfaAuthenticator },
-  { type: "sms", title: "Send code to your phone number", icon: MfaSms },
-  { type: "email", title: "Send code to your email address", icon: MfaEmail },
-  { type: "recoveryCode", title: "Use a recovery code", icon: MfaRecoveryCode }
+  { type: "app", title: strings.sendCode(), icon: MfaAuthenticator },
+  { type: "sms", title: strings.sendCodeSms(), icon: MfaSms },
+  { type: "email", title: strings.sendCodeEmail(), icon: MfaEmail },
+  { type: "recoveryCode", title: strings.recoveryCode(), icon: MfaRecoveryCode }
 ];
 function MFASelector(props: BaseAuthComponentProps<"mfa:select">) {
-  const { navigate, formData } = props;
+  const { navigate, formData, openURL } = props;
   const [selected, setSelected] = useState(0);
   const isValidMethod = useCallback(
     (method: MFAMethodType) => {
@@ -736,19 +772,20 @@ function MFASelector(props: BaseAuthComponentProps<"mfa:select">) {
     [formData]
   );
   if (!formData) {
-    openURL("/");
+    openURL("/", { authenticated: false });
     return null;
   }
 
   return (
     <AuthForm
       type="mfa:select"
-      title="Select two-factor authentication method"
-      subtitle={`Where should we send you the authentication code?`}
+      title={strings.select2faMethod()}
+      subtitle={strings.select2faCodeHelpText()}
       loading={{
-        title: "Logging you in",
-        subtitle: "Please wait while you are authenticated."
+        title: strings.loggingIn(),
+        subtitle: strings.authWait()
       }}
+      openURL={openURL}
       onSubmit={async () => {
         const selectedType = MFAMethods[selected];
         formData.selectedMethod = selectedType.type;
@@ -811,6 +848,7 @@ type AuthFormProps<TType extends AuthRoutes> = {
   loading: { title: string; subtitle: string };
   type: TType;
   onSubmit: (form: AuthFormData[TType]) => Promise<void>;
+  openURL: OpenURLFunction;
   loadForever?: boolean;
   canSkip?: boolean;
   children?:
@@ -819,7 +857,7 @@ type AuthFormProps<TType extends AuthRoutes> = {
 };
 
 export function AuthForm<T extends AuthRoutes>(props: AuthFormProps<T>) {
-  const { title, subtitle, children, canSkip, loadForever } = props;
+  const { title, subtitle, children, canSkip, loadForever, openURL } = props;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const formRef = useRef<HTMLFormElement>(null);
@@ -862,7 +900,7 @@ export function AuthForm<T extends AuthRoutes>(props: AuthFormProps<T>) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        width: ["95%", "45%"],
+        width: ["95%", "95%", "45%"],
         alignSelf: "center"
       }}
     >
@@ -892,10 +930,10 @@ export function AuthForm<T extends AuthRoutes>(props: AuthFormProps<T>) {
             textDecoration: "none"
           }}
           onClick={() => {
-            openURL("/notes/");
+            openURL("/notes/", { authenticated: false });
           }}
         >
-          Skip & go directly to the app
+          {strings.skipAndGoToApp()}
         </Button>
       )}
 
@@ -933,50 +971,28 @@ function SubtitleWithAction(props: SubtitleWithActionProps) {
   );
 }
 
-type AuthFieldProps = {
-  id: string;
-  type: string;
-  autoFocus?: boolean;
-  autoComplete: string;
-  label?: string;
-  placeholder?: string;
-  helpText?: string;
-  defaultValue?: string;
-  disabled?: boolean;
-  inputMode?: string;
-  pattern?: string;
-  action?: {
-    disabled?: boolean;
-    component?: JSX.Element;
-    onClick?: () => void | Promise<void>;
-  };
-};
-export function AuthField(props: AuthFieldProps) {
+export function AuthField(props: FieldProps) {
   return (
     <Field
-      type={props.type}
-      id={props.id}
-      name={props.id}
-      data-test-id={props.id}
-      autoComplete={props.autoComplete}
-      label={props.label}
-      autoFocus={props.autoFocus}
-      defaultValue={props.defaultValue}
-      helpText={props.helpText}
-      disabled={props.disabled}
-      pattern={props.pattern}
-      inputMode={props.inputMode}
-      placeholder={props.placeholder}
+      {...props}
+      name={props.name || props.id}
+      data-test-id={props["data-test-id"] || props.id}
       required
-      action={props.action}
+      sx={{ mt: 2, width: "100%" }}
       styles={{
-        container: { mt: 2, width: "100%" },
         // label: { fontWeight: "normal" },
         input: {
           p: "12px",
           borderRadius: "default",
           bg: "background",
-          boxShadow: "0px 0px 5px 0px #00000019"
+          boxShadow: "0px 0px 5px 0px #00000019",
+          "::-moz-appearance": "textfield",
+          "::-webkit-inner-spin-button": {
+            "-webkit-appearance": "none"
+          },
+          "::-webkit-outer-spin-button": {
+            "-webkit-appearance": "none"
+          }
         }
       }}
     />
@@ -1010,11 +1026,11 @@ export function SubmitButton(props: SubmitButtonProps) {
   );
 }
 
-function openURL(url: string, force?: boolean) {
+function _openURL(url: string, _context?: any) {
   const queryParams = getQueryParams();
   const redirect = queryParams?.redirect;
   Config.set("skipInitiation", true);
-  hardNavigate(force ? url : redirect || url);
+  hardNavigate(redirect || url);
 }
 
 function maskEmail(email: string) {

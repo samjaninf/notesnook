@@ -23,25 +23,9 @@ import { useThemeColors } from "@notesnook/theme";
 import { SIZE } from "../../utils/size";
 import Paragraph from "../ui/typography/paragraph";
 import { getFormattedDate } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
 export const DateMeta = ({ item }) => {
   const { colors } = useThemeColors();
-
-  const getNameFromKey = (key) => {
-    switch (key) {
-      case "dateCreated":
-        return "Created at:";
-      case "dateEdited":
-        return "Last edited at:";
-      case "dateModified":
-        return "Last modified at:";
-      case "dateDeleted":
-        return "Deleted at:";
-      case "dateUploaded":
-        return "Uploaded at:";
-      default:
-        return key;
-    }
-  };
 
   function getDateMeta() {
     let keys = Object.keys(item);
@@ -53,23 +37,24 @@ export const DateMeta = ({ item }) => {
     return keys.filter((key) => key.startsWith("date") && key !== "date");
   }
 
-  const renderItem = (key) => (
-    <View
-      key={key}
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        paddingVertical: 3
-      }}
-    >
-      <Paragraph size={SIZE.xs} color={colors.secondary.paragraph}>
-        {getNameFromKey(key)}
-      </Paragraph>
-      <Paragraph size={SIZE.xs} color={colors.secondary.paragraph}>
-        {getFormattedDate(item[key], "date-time")}
-      </Paragraph>
-    </View>
-  );
+  const renderItem = (key) =>
+    !item[key] ? null : (
+      <View
+        key={key}
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          paddingVertical: 3
+        }}
+      >
+        <Paragraph size={SIZE.xs} color={colors.secondary.paragraph}>
+          {strings.dateDescFromKey(key)}
+        </Paragraph>
+        <Paragraph size={SIZE.xs} color={colors.secondary.paragraph}>
+          {getFormattedDate(item[key], "date-time")}
+        </Paragraph>
+      </View>
+    );
 
   return (
     <View
@@ -77,7 +62,7 @@ export const DateMeta = ({ item }) => {
         paddingVertical: 5,
         marginTop: 5,
         borderTopWidth: 1,
-        borderTopColor: colors.secondary.background,
+        borderTopColor: colors.primary.border,
         paddingHorizontal: 12
       }}
     >

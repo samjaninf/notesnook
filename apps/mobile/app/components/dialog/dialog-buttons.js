@@ -25,17 +25,19 @@ import { useThemeColors } from "@notesnook/theme";
 import { SIZE } from "../../utils/size";
 import { Button } from "../ui/button";
 import Paragraph from "../ui/typography/paragraph";
+import { getColorLinearShade } from "../../utils/colors";
+import { strings } from "@notesnook/intl";
 
 const DialogButtons = ({
   onPressPositive,
   onPressNegative,
   positiveTitle,
-  negativeTitle = "Cancel",
+  negativeTitle = strings.cancel(),
   loading,
   doneText,
   positiveType
 }) => {
-  const { colors } = useThemeColors();
+  const { colors, isDark } = useThemeColors();
 
   return (
     <View
@@ -44,9 +46,15 @@ const DialogButtons = ({
         {
           backgroundColor: colors.secondary.background,
           height: 60,
-          borderBottomRightRadius: 10,
-          borderBottomLeftRadius: 10,
-          paddingHorizontal: 12
+          borderBottomRightRadius: 5,
+          borderBottomLeftRadius: 5,
+          paddingHorizontal: 12,
+          borderTopWidth: 0.7,
+          borderTopColor: getColorLinearShade(
+            colors.secondary.background,
+            0.05,
+            isDark
+          )
         }
       ]}
     >
@@ -80,7 +88,7 @@ const DialogButtons = ({
           onPress={onPressNegative}
           fontSize={SIZE.md}
           testID={notesnook.ids.default.dialog.no}
-          type="gray"
+          type="plain"
           bold
           title={negativeTitle}
         />

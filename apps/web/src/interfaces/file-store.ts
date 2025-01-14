@@ -17,8 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { IFileStorage } from "@notesnook/streamable-fs/dist/src/interfaces";
-import { File } from "@notesnook/streamable-fs/dist/src/types";
+import { IFileStorage, File } from "@notesnook/streamable-fs";
 import { IndexedDBKVStore } from "./key-value";
 import OriginPrivateFileStoreWorker from "./opfs.worker?worker";
 import { OriginPrivateFileStoreWorkerType } from "./opfs.worker";
@@ -50,6 +49,21 @@ export class IndexedDBFileStore implements IFileStorage {
   }
   readChunk(chunkName: string): Promise<Uint8Array | undefined> {
     return this.storage.get(chunkName);
+  }
+  async listChunks(chunkPrefix: string): Promise<string[]> {
+    const keys = await this.storage.keys();
+    return keys.filter((k) =>
+      (k as string).startsWith(chunkPrefix)
+    ) as string[];
+  }
+
+  async chunkSize(chunkName: string): Promise<number> {
+    const chunk = await this.storage.get<Uint8Array>(chunkName);
+    return chunk?.length || 0;
+  }
+
+  async list(): Promise<string[]> {
+    return (await this.storage.keys()) as string[];
   }
 }
 
@@ -89,10 +103,10 @@ export class CacheStorageFileStore implements IFileStorage {
     await cache.put(
       this.toURL(chunkName),
       new Response(data, {
-        headers: new Headers({
+        headers: {
           "Content-Length": data.length.toString(),
           "Content-Type": "application/encrypted-octet-stream"
-        })
+        }
       })
     );
   }
@@ -106,6 +120,28 @@ export class CacheStorageFileStore implements IFileStorage {
     const cache = await this.getCache();
     const response = await cache.match(this.toURL(chunkName));
     return response ? new Uint8Array(await response.arrayBuffer()) : undefined;
+  }
+
+  async listChunks(chunkPrefix: string): Promise<string[]> {
+    const cache = await this.getCache();
+    const keys = await cache.keys();
+    return keys
+      .filter((k) => k.url.includes(`/${chunkPrefix}`))
+      .map((r) => r.url.slice(r.url.lastIndexOf("/") + 1));
+  }
+
+  async list(): Promise<string[]> {
+    const cache = await this.getCache();
+    const keys = await cache.keys();
+    return keys.map((r) => r.url.slice(1));
+  }
+
+  async chunkSize(chunkName: string): Promise<number> {
+    const cache = await this.getCache();
+    const response = await cache.match(this.toURL(chunkName));
+    const length = response?.headers.get("Content-Length");
+    if (length) return parseInt(length);
+    return response ? (await response.arrayBuffer()).byteLength : 0;
   }
 
   private toURL(chunkName: string) {
@@ -157,5 +193,17 @@ export class OriginPrivateFileSystem implements IFileStorage {
   async readChunk(chunkName: string): Promise<Uint8Array | undefined> {
     await this.create();
     return this.worker.readChunk(this.name, chunkName);
+  }
+  async listChunks(chunkPrefix: string): Promise<string[]> {
+    await this.create();
+    return (await this.worker.listChunks(this.name, chunkPrefix)) || [];
+  }
+  async chunkSize(chunkName: string): Promise<number> {
+    await this.create();
+    return await this.worker.chunkSize(this.name, chunkName);
+  }
+  async list(): Promise<string[]> {
+    await this.create();
+    return (await this.worker.list(this.name)) || [];
   }
 }

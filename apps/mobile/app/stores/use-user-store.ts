@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { Profile, User } from "@notesnook/core";
 import create, { State } from "zustand";
 
 export enum SyncStatus {
@@ -28,17 +29,18 @@ export enum SyncStatus {
 export interface UserStore extends State {
   user: User | null | undefined;
   premium: boolean;
-  lastSynced: string;
+  lastSynced: string | number;
   syncing: boolean;
   lastSyncStatus: SyncStatus;
   setUser: (user: User | null | undefined) => void;
   setPremium: (premium: boolean) => void;
   setSyncing: (syncing: boolean, status?: SyncStatus) => void;
-  setLastSynced: (lastSynced: string) => void;
+  setLastSynced: (lastSynced: number | "Never") => void;
   appLocked: boolean;
   lockApp: (verified: boolean) => void;
   disableAppLockRequests: boolean;
   setDisableAppLockRequests: (shouldBlockVerifyUser: boolean) => void;
+  profile?: Partial<Profile>;
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -53,7 +55,9 @@ export const useUserStore = create<UserStore>((set) => ({
     set({ syncing: syncing, lastSyncStatus: status });
   },
   setLastSynced: (lastSynced) => set({ lastSynced: lastSynced }),
-  lockApp: (appLocked) => set({ appLocked }),
+  lockApp: (appLocked) => {
+    set({ appLocked });
+  },
   lastSyncStatus: SyncStatus.Never,
   disableAppLockRequests: false,
   setDisableAppLockRequests: (disableAppLockRequests) => {
@@ -61,5 +65,6 @@ export const useUserStore = create<UserStore>((set) => ({
     setTimeout(() => {
       set({ disableAppLockRequests: false });
     }, 1000);
-  }
+  },
+  profile: undefined
 }));

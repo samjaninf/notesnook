@@ -17,70 +17,87 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { getFileNameWithExtension, Attachment } from "@notesnook/core";
 import { db } from "../../common/db";
-import { lazify } from "../lazify";
+import { showToast } from "../toast";
 import { makeUniqueFilename } from "./utils";
 import { ZipFile } from "./zip-stream";
+import { logger } from "../logger";
+import { decryptFile } from "../../interfaces/fs";
 
 export const METADATA_FILENAME = "metadata.json";
 const GROUP_ID = "all-attachments";
 export class AttachmentStream extends ReadableStream<ZipFile> {
   constructor(
-    attachments: Array<any>,
+    ids: string[],
+    resolve: (id: string) => Promise<Attachment | undefined> | undefined,
     signal?: AbortSignal,
     onProgress?: (current: number) => void
   ) {
-    let index = 0;
-    const counters: Record<string, number> = {};
     if (signal)
       signal.onabort = async () => {
-        await db.fs?.cancel(GROUP_ID, "download");
+        await db.fs().cancel(GROUP_ID);
       };
-
     super({
-      start() {},
-      async pull(controller) {
-        if (signal?.aborted) {
-          controller.close();
-          return;
-        }
+      async start(controller) {
+        const counters: Record<string, number> = {};
+        let index = 0;
+        for (const id of ids) {
+          if (signal?.aborted) {
+            controller.close();
+            return;
+          }
 
-        onProgress && onProgress(index);
-        const attachment = attachments[index++];
+          onProgress && onProgress(index++);
+          const attachment = await resolve(id);
+          if (!attachment) return;
+          try {
+            if (
+              !(await db
+                .fs()
+                .downloadFile(GROUP_ID, attachment.hash, attachment.chunkSize))
+            )
+              return;
 
-        await db.fs?.downloadFile(
-          GROUP_ID,
-          attachment.metadata.hash,
-          attachment.chunkSize,
-          attachment.metadata
-        );
+            const key = await db.attachments.decryptKey(attachment.key);
+            if (!key) return;
 
-        const key = await db.attachments?.decryptKey(attachment.key);
-        const file = await lazify(
-          import("../../interfaces/fs"),
-          ({ decryptFile }) =>
-            decryptFile(attachment.metadata.hash, {
+            const file = await decryptFile(attachment.hash, {
               key,
               iv: attachment.iv,
-              name: attachment.metadata.filename,
-              type: attachment.metadata.type,
+              name: attachment.filename,
+              type: attachment.mimeType,
               isUploaded: !!attachment.dateUploaded
-            })
-        );
+            });
 
-        if (file) {
-          const filePath: string = attachment.metadata.filename;
-          controller.enqueue({
-            path: makeUniqueFilename(filePath, counters),
-            data: new Uint8Array(await file.arrayBuffer())
-          });
-        } else {
-          controller.error(new Error("Failed to decrypt file."));
+            if (file) {
+              const filePath: string =
+                attachment.filename === attachment.hash
+                  ? await getFileNameWithExtension(
+                      attachment.hash,
+                      attachment.mimeType
+                    )
+                  : attachment.filename;
+              controller.enqueue({
+                path: makeUniqueFilename(filePath, counters),
+                data: new Uint8Array(await file.arrayBuffer())
+              });
+            } else {
+              throw new Error(
+                `Failed to decrypt file (hash: ${attachment.hash}, filename: ${attachment.filename}).`
+              );
+            }
+          } catch (e) {
+            logger.error(e, "Failed to download attachment");
+            showToast(
+              "error",
+              `Failed to download attachment: ${(e as Error).message} (hash: ${
+                attachment.hash
+              }, filename: ${attachment.filename})`
+            );
+          }
         }
-
-        if (index === attachments.length) {
-          controller.close();
-        }
+        controller.close();
       }
     });
   }

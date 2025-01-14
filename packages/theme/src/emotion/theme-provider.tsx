@@ -18,21 +18,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { ThemeProvider } from "@theme-ui/core";
-import {
-  ThemeScopes,
-  useThemeColors,
-  useThemeEngineStore,
-  ScopedThemeProvider as NNScopedThemeProvider,
-  ThemeFactory,
-  Theme
-} from "../";
 import React, { ForwardedRef, PropsWithChildren, useMemo } from "react";
 import { Box, BoxProps } from "@theme-ui/components";
 import { useTheme } from "@emotion/react";
+import { ThemeScopes } from "../theme-engine/types.js";
+import { Theme, ThemeFactory } from "../theme/index.js";
+import {
+  ScopedThemeProvider,
+  useThemeColors,
+  useThemeEngineStore
+} from "../theme-engine/index.js";
 
 export type EmotionThemeProviderProps = {
   scope?: keyof ThemeScopes;
   injectCssVars?: boolean;
+  theme?: Partial<Theme>;
 } & Omit<BoxProps, "variant" | "ref">;
 
 function _EmotionThemeProvider(
@@ -44,6 +44,7 @@ function _EmotionThemeProvider(
     scope = "base",
     injectCssVars = true,
     className,
+    theme: partialTheme,
     ...restProps
   } = props;
   const emotionTheme = useTheme() as Theme;
@@ -66,10 +67,11 @@ function _EmotionThemeProvider(
         ...(emotionTheme && "space" in emotionTheme
           ? emotionTheme
           : themeProperties),
+        ...partialTheme,
         colors: themeProperties.colors
       }}
     >
-      <NNScopedThemeProvider value={scope}>
+      <ScopedThemeProvider value={scope}>
         {injectCssVars ? (
           <Box
             {...restProps}
@@ -83,7 +85,7 @@ function _EmotionThemeProvider(
         ) : (
           children
         )}
-      </NNScopedThemeProvider>
+      </ScopedThemeProvider>
     </ThemeProvider>
   );
 }

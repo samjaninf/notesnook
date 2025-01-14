@@ -18,13 +18,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { test } from "vitest";
-import { createEditor, h } from "../../../../test-utils";
-import OrderedList from "../../ordered-list";
-import { ListItem } from "../../list-item";
-import { transformCopied } from "../index";
-import { Paragraph } from "../../paragraph";
-import { ClipboardDOMSerializer } from "../clipboard-dom-serializer";
-import { clipboardTextSerializer } from "../clipboard-text-serializer";
+import { createEditor, h } from "../../../../test-utils/index.js";
+import OrderedList from "../../ordered-list/index.js";
+import { ListItem } from "../../list-item/index.js";
+import { transformCopied } from "../index.js";
+import { Paragraph } from "../../paragraph/index.js";
+import { ClipboardDOMSerializer } from "../clipboard-dom-serializer.js";
+import { clipboardTextSerializer } from "../clipboard-text-serializer.js";
+import Link from "../../link/index.js";
 
 test("copied list items shouldn't contain extra newlines", (t) => {
   const { editor } = createEditor({
@@ -77,7 +78,56 @@ test("copying a single list item shouldn't copy the list metadata", (t) => {
 
   t.expect(
     transformCopied(
-      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2)
+      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2),
+      editor.view
+    ).toJSON()
+  ).toMatchSnapshot();
+});
+
+test("copying text from a list item shouldn't add extra spaces at the end", (t) => {
+  const { editor } = createEditor({
+    initialContent: h("div", [
+      h("ol", [
+        h("li", [
+          h("p", ["I am ", h("a", ["Hello"], { href: "https://google.com/" })])
+        ])
+      ])
+    ]).innerHTML,
+    extensions: {
+      orderedList: OrderedList,
+      listItem: ListItem,
+      link: Link
+    }
+  });
+
+  t.expect(
+    transformCopied(
+      editor.state.doc.slice(
+        editor.state.doc.nodeSize - 10,
+        editor.state.doc.nodeSize - 2
+      ),
+      editor.view
+    ).toJSON()
+  ).toMatchSnapshot();
+});
+
+test("copying multiple lists shouldn't copy only the first list", (t) => {
+  const { editor } = createEditor({
+    initialContent: h("div", [
+      h("ol", [h("li", ["Hello"])]),
+      h("ol", [h("li", ["Hello 2"])]),
+      h("ol", [h("li", ["Hello 3"])])
+    ]).innerHTML,
+    extensions: {
+      orderedList: OrderedList,
+      listItem: ListItem
+    }
+  });
+
+  t.expect(
+    transformCopied(
+      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2),
+      editor.view
     ).toJSON()
   ).toMatchSnapshot();
 });
@@ -100,7 +150,8 @@ test("copying a single nested list item shouldn't copy the list metadata", (t) =
 
   t.expect(
     transformCopied(
-      editor.state.doc.slice(12, editor.state.doc.nodeSize - 2)
+      editor.state.doc.slice(12, editor.state.doc.nodeSize - 2),
+      editor.view
     ).toJSON()
   ).toMatchSnapshot();
 });

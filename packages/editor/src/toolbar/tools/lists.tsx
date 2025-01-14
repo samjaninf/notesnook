@@ -17,17 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
+import { ToolProps } from "../types.js";
 import { Box, Button, Flex } from "@theme-ui/components";
-import { IconNames } from "../icons";
-import { useCallback, useRef, useState } from "react";
-import { SplitButton } from "../components/split-button";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { getToolbarElement } from "../utils/dom";
-import { PopupWrapper } from "../../components/popup-presenter";
-import React from "react";
-import { ToolButton } from "../components/tool-button";
-import { findListItemType, isListActive } from "../../utils/prosemirror";
+import { IconNames } from "../icons.js";
+import { useCallback, useRef } from "react";
+import { SplitButton } from "../components/split-button.js";
+import { usePopupManager, useToolbarLocation } from "../stores/toolbar-store.js";
+import { getToolbarElement } from "../utils/dom.js";
+import { PopupWrapper } from "../../components/popup-presenter/index.js";
+import { ToolButton } from "../components/tool-button.js";
+import { findListItemType, isListActive } from "../../utils/list.js";
 
 type ListSubType<TListStyleTypes> = {
   items: string[];
@@ -43,14 +42,18 @@ type ListToolProps<TListStyleTypes> = ToolProps & {
   subTypes: ListSubType<TListStyleTypes>[];
 };
 
-function _ListTool<TListStyleTypes extends string>(
+function ListTool<TListStyleTypes extends string>(
   props: ListToolProps<TListStyleTypes>
 ) {
-  const { editor, onClick, subTypes, type, ...toolProps } = props;
+  const { editor, onClick, subTypes, type, parentGroup, ...toolProps } = props;
   const toolbarLocation = useToolbarLocation();
   const isBottom = toolbarLocation === "bottom";
-  const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const { toggle, isOpen, close } = usePopupManager({
+    id: toolProps.title,
+    group: "lists",
+    parent: parentGroup
+  });
 
   return (
     <SplitButton
@@ -59,14 +62,14 @@ function _ListTool<TListStyleTypes extends string>(
       onClick={onClick}
       toggled={isOpen}
       sx={{ mr: 0 }}
-      onOpen={() => setIsOpen((s) => !s)}
+      onOpen={toggle}
     >
       <PopupWrapper
-        isOpen={isOpen}
         group="lists"
         id={toolProps.title}
         blocking={false}
         focusOnRender={false}
+        autoCloseOnUnmount
         position={{
           isTargetAbsolute: true,
           target: isBottom ? getToolbarElement() : buttonRef.current || "mouse",
@@ -74,11 +77,12 @@ function _ListTool<TListStyleTypes extends string>(
           location: isBottom ? "top" : "below",
           yOffset: 10
         }}
-        onClosed={() => setIsOpen(false)}
       >
         <Box
           sx={{
             bg: "background",
+            boxShadow: "menu",
+            borderRadius: "default",
             display: "grid",
             gridTemplateColumns: "1fr 1fr 1fr",
             p: 1
@@ -88,16 +92,16 @@ function _ListTool<TListStyleTypes extends string>(
             <Button
               key={item.title}
               variant={"menuitem"}
-              sx={{ width: 80 }}
+              sx={{ width: 80, p: 0, borderRadius: "default" }}
               onClick={() => {
-                let chain = editor.current?.chain().focus();
-                if (!chain || !editor.current) return;
+                let chain = editor.chain().focus();
+                if (!chain || !editor) return;
 
-                if (!isListActive(editor.current)) {
+                if (!isListActive(editor)) {
                   if (type === "bulletList") chain = chain.toggleBulletList();
                   else chain = chain.toggleOrderedList();
                 }
-                setIsOpen(false);
+                close();
                 return chain
                   .updateAttributes(type, { listType: item.type })
                   .run();
@@ -112,15 +116,11 @@ function _ListTool<TListStyleTypes extends string>(
   );
 }
 
-const ListTool = React.memo(_ListTool, (prev, next) => {
-  return prev.isActive === next.isActive;
-});
-
 export function NumberedList(props: ToolProps) {
   const { editor } = props;
 
   const onClick = useCallback(
-    () => editor.current?.chain().focus().toggleOrderedList().run(),
+    () => editor.chain().focus().toggleOrderedList().run(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -154,7 +154,7 @@ export function NumberedList(props: ToolProps) {
 export function BulletList(props: ToolProps) {
   const { editor } = props;
   const onClick = useCallback(
-    () => editor.current?.chain().focus().toggleBulletList().run(),
+    () => editor.chain().focus().toggleBulletList().run(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -174,6 +174,18 @@ export function BulletList(props: ToolProps) {
   );
 }
 
+export function CheckList(props: ToolProps) {
+  const { editor, ...toolProps } = props;
+
+  return (
+    <ToolButton
+      {...toolProps}
+      toggled={false}
+      onClick={() => editor.chain().focus().toggleCheckList().run()}
+    />
+  );
+}
+
 export function Indent(props: ToolProps) {
   const { editor, ...toolProps } = props;
   const isBottom = useToolbarLocation() === "bottom";
@@ -185,9 +197,7 @@ export function Indent(props: ToolProps) {
     <ToolButton
       {...toolProps}
       toggled={false}
-      onClick={() =>
-        editor.current?.chain().focus().sinkListItem(listItemType).run()
-      }
+      onClick={() => editor.chain().focus().sinkListItem(listItemType).run()}
     />
   );
 }
@@ -203,9 +213,7 @@ export function Outdent(props: ToolProps) {
     <ToolButton
       {...toolProps}
       toggled={false}
-      onClick={() =>
-        editor.current?.chain().focus().liftListItem(listItemType).run()
-      }
+      onClick={() => editor.chain().focus().liftListItem(listItemType).run()}
     />
   );
 }
@@ -219,11 +227,18 @@ function ListThumbnail(props: ListThumbnailProps) {
       sx={{
         flexDirection: "column",
         flex: 1,
-        p: 0,
         listStyleType,
-        gap: 1
+        m: 0,
+        ml: "10px",
+        p: "5px",
+        pl: "7px",
+        gap: `7px`
       }}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        if (globalThis.keyboardShown) {
+          e.preventDefault();
+        }
+      }}
     >
       {[0, 1, 2].map((i) => (
         <Box
@@ -232,25 +247,12 @@ function ListThumbnail(props: ListThumbnailProps) {
           sx={{
             display: "list-item",
             color: "paragraph",
-            fontSize: 8
+            fontSize: 8,
+            bg: "border",
+            height: `7px`,
+            borderRadius: "small"
           }}
-        >
-          <Flex
-            sx={{
-              alignItems: "center"
-            }}
-          >
-            <Box
-              sx={{
-                width: "100%",
-                flexShrink: 0,
-                height: 5,
-                bg: "border",
-                borderRadius: "small"
-              }}
-            />
-          </Flex>
-        </Box>
+        />
       ))}
     </Flex>
   );

@@ -22,42 +22,21 @@ import { useStore as useSettingStore } from "../../stores/setting-store";
 import { useStore as useUserStore } from "../../stores/user-store";
 import { getPlatform } from "../../utils/platform";
 import { db } from "../../common/db";
-import { showPromptDialog } from "../../common/dialog-controller";
 import Config from "../../utils/config";
 import { showToast } from "../../utils/toast";
-import { TrackingDetails } from "./components/tracking-details";
+import { PromptDialog } from "../prompt";
+import { strings } from "@notesnook/intl";
 
 export const PrivacySettings: SettingsGroup[] = [
   {
     key: "general",
     section: "privacy",
-    header: "General",
+    header: strings.general(),
     settings: [
       {
-        key: "telemetry",
-        title: "Telemetry",
-        description: `Usage data & crash reports will be sent to us (no 3rd party involved) for analytics. All data is anonymous as mentioned in our privacy policy.
-
-What data is collected & when?`,
-        onStateChange: (listener) =>
-          useSettingStore.subscribe((s) => s.telemetry, listener),
-        components: [
-          {
-            type: "toggle",
-            isToggled: () => !!useSettingStore.getState().telemetry,
-            toggle: () => useSettingStore.getState().toggleTelemetry()
-          },
-          {
-            type: "custom",
-            component: TrackingDetails
-          }
-        ]
-      },
-      {
         key: "marketing",
-        title: "Marketing emails",
-        description:
-          "We send you occasional promotional offers & product updates on your email (once every month).",
+        title: strings.marketingEmails(),
+        description: strings.marketingEmailsDesc(),
         onStateChange: (listener) =>
           useUserStore.subscribe((s) => s.user?.marketingConsent, listener),
         isHidden: () => !useUserStore.getState().isLoggedIn,
@@ -66,7 +45,7 @@ What data is collected & when?`,
             type: "toggle",
             isToggled: () => !!useUserStore.getState().user?.marketingConsent,
             toggle: async () => {
-              await db.user?.changeMarketingConsent(
+              await db.user.changeMarketingConsent(
                 !useUserStore.getState().user?.marketingConsent
               );
               await useUserStore.getState().refreshUser();
@@ -76,8 +55,8 @@ What data is collected & when?`,
       },
       {
         key: "hide-note-title",
-        title: "Hide note title",
-        description: "Prevent note title from appearing in tab/window title.",
+        title: strings.hideNoteTitle(),
+        description: strings.hideNoteTitleDescription(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.hideNoteTitle, listener),
         components: [
@@ -90,9 +69,8 @@ What data is collected & when?`,
       },
       {
         key: "privacy-mode",
-        title: "Privacy mode",
-        description:
-          "Prevent Notesnook app from being captured by any screen capturing software like TeamViewer & AnyDesk.",
+        title: strings.privacyMode(),
+        description: strings.privacyModeDesc(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.privacyMode, listener),
         isHidden: () => !IS_DESKTOP_APP || getPlatform() === "linux",
@@ -109,24 +87,35 @@ What data is collected & when?`,
   {
     key: "advanced",
     section: "privacy",
-    header: "Advanced",
+    header: strings.advanced(),
     settings: [
       {
-        key: "custom-cors",
-        title: "Custom CORS proxy",
-        description:
-          "CORS proxy is required to directly download images from within the Notesnook app. It allows Notesnook to bypass browser restrictions by using a proxy. You can set a custom self-hosted proxy URL to increase your privacy",
+        key: "custom-dns",
+        title: strings.useCustomDns(),
+        description: strings.customDnsDescription(),
         onStateChange: (listener) =>
-          useSettingStore.subscribe((s) => s.telemetry, listener),
+          useSettingStore.subscribe((s) => s.customDns, listener),
+        isHidden: () => !IS_DESKTOP_APP,
+        components: [
+          {
+            type: "toggle",
+            isToggled: () => useSettingStore.getState().customDns,
+            toggle: () => useSettingStore.getState().toggleCustomDns()
+          }
+        ]
+      },
+      {
+        key: "custom-cors",
+        title: strings.corsBypass(),
+        description: strings.corsBypassDesc(),
         components: [
           {
             type: "button",
-            title: "Change proxy",
+            title: strings.changeProxy(),
             action: async () => {
-              const result = await showPromptDialog({
-                title: "CORS bypass proxy",
-                description:
-                  "You can set a custom proxy URL to increase your privacy.",
+              const result = await PromptDialog.show({
+                title: strings.corsBypass(),
+                description: strings.corsBypassDesc(),
                 defaultValue: Config.get(
                   "corsProxy",
                   "https://cors.notesnook.com"
@@ -138,10 +127,27 @@ What data is collected & when?`,
                 Config.set("corsProxy", `${url.protocol}//${url.hostname}`);
               } catch (e) {
                 console.error(e);
-                showToast("error", "Invalid CORS proxy url.");
+                showToast("error", strings.invalidCors());
               }
             },
             variant: "secondary"
+          }
+        ]
+      },
+      {
+        key: "proxy-config",
+        title: strings.proxy(),
+        description: strings.proxyDescription(),
+        onStateChange: (listener) =>
+          useSettingStore.subscribe((c) => c.proxyRules, listener),
+        components: [
+          {
+            type: "input",
+            inputType: "text",
+            defaultValue: () => useSettingStore.getState().proxyRules || "",
+            onChange: (value) => {
+              useSettingStore.getState().setProxyRules(value);
+            }
           }
         ]
       }

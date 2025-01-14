@@ -28,7 +28,13 @@ import { Toast } from "../../toast";
 import { useAppState } from "../../../hooks/use-app-state";
 import SettingsService from "../../../services/settings";
 import { useUserStore } from "../../../stores/use-user-store";
+import { getContainerBorder } from "../../../utils/colors";
 
+/**
+ *
+ * @param {any} param0
+ * @returns
+ */
 const SheetWrapper = ({
   children,
   fwdRef,
@@ -68,9 +74,17 @@ const SheetWrapper = ({
       borderTopLeftRadius: 15,
       alignSelf: "center",
       borderBottomRightRadius: 0,
-      borderBottomLeftRadius: 0
+      borderBottomLeftRadius: 0,
+      ...getContainerBorder(colors.primary.border, 0.5),
+      borderBottomWidth: 0
     };
-  }, [colors.primary.background, largeTablet, smallTablet, width]);
+  }, [
+    colors.primary.background,
+    colors.primary.border,
+    largeTablet,
+    smallTablet,
+    width
+  ]);
 
   const _onOpen = () => {
     if (lockEvents.current) return;
@@ -86,7 +100,7 @@ const SheetWrapper = ({
 
   useEffect(() => {
     if (useUserStore.getState().disableAppLockRequests) return;
-    if (SettingsService.get().appLockMode === "background") {
+    if (SettingsService.canLockAppInBackground()) {
       if (appState === "background") {
         const ref = fwdRef || localRef;
         ref?.current?.hide();
@@ -115,7 +129,8 @@ const SheetWrapper = ({
           width: 100,
           backgroundColor: colors.secondary.background
         }}
-        drawUnderStatusBar={false}
+        statusBarTranslucent
+        drawUnderStatusBar={true}
         containerStyle={style}
         gestureEnabled={gestureEnabled}
         initialOffsetFromBottom={1}

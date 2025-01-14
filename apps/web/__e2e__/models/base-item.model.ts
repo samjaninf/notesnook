@@ -25,7 +25,7 @@ export class BaseItemModel {
   private readonly titleText: Locator;
   readonly descriptionText: Locator;
 
-  constructor(protected readonly locator: Locator) {
+  constructor(readonly locator: Locator) {
     this.page = locator.page();
     this.titleText = this.locator.locator(getTestId(`title`));
     this.descriptionText = this.locator.locator(getTestId(`description`));
@@ -46,7 +46,7 @@ export class BaseItemModel {
   }
 
   async getId() {
-    return await this.locator.getAttribute("id");
+    return (await this.locator.getAttribute("id"))?.replace("id_", "");
   }
 
   async getTitle() {

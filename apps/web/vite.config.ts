@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { PluginOption, defineConfig } from "vite";
+import { Plugin, PluginOption, ResolvedConfig, defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import svgrPlugin from "vite-plugin-svgr";
 import envCompatible from "vite-plugin-env-compatible";
@@ -37,13 +37,13 @@ const gitHash = (() => {
     return process.env.GIT_HASH || "gitless";
   }
 })();
-const appVersion = version.replaceAll(".", "");
+const appVersion = version.replaceAll(".", "").replace("-beta", "");
+const isBeta = version.endsWith("-beta");
 const isTesting =
   process.env.TEST === "true" || process.env.NODE_ENV === "development";
 const isDesktop = process.env.PLATFORM === "desktop";
 const isThemeBuilder = process.env.THEME_BUILDER === "true";
 const isAnalyzing = process.env.ANALYZING === "true";
-process.env.NN_BUILD_TIMESTAMP = isTesting ? "0" : `${Date.now()}`;
 
 export default defineConfig({
   envPrefix: "NN_",
@@ -55,11 +55,21 @@ export default defineConfig({
     minify: "esbuild",
     cssMinify: true,
     emptyOutDir: true,
+    sourcemap: !isDesktop,
     rollupOptions: {
       output: {
         plugins: [emitEditorStyles()],
         assetFileNames: "assets/[name]-[hash:12][extname]",
-        chunkFileNames: "assets/[name]-[hash:12].js"
+        chunkFileNames: "assets/[name]-[hash:12].js",
+        manualChunks: (id: string) => {
+          if (
+            (id.includes("/editor/languages/") ||
+              id.includes("/html/languages/")) &&
+            path.basename(id) !== "index.js"
+          )
+            return `code-lang-${path.basename(id, "js")}`;
+          return null;
+        }
       }
     }
   },
@@ -71,7 +81,7 @@ export default defineConfig({
     IS_DESKTOP_APP: isDesktop,
     PLATFORM: `"${process.env.PLATFORM}"`,
     IS_TESTING: process.env.TEST === "true",
-    IS_BETA: process.env.BETA === "true",
+    IS_BETA: isBeta,
     IS_THEME_BUILDER: isThemeBuilder
   },
   logLevel: process.env.NODE_ENV === "production" ? "warn" : "info",
@@ -82,15 +92,22 @@ export default defineConfig({
       "@mdi/js",
       "@mdi/react",
       "@emotion/react",
-      "katex"
+      "katex",
+      "react-modal",
+      "dayjs",
+      "@streetwriters/kysely"
     ],
 
     alias: [
       {
-        find: /desktop-bridge/gm,
+        find: /\/desktop-bridge$/gm,
         replacement: isDesktop
-          ? "desktop-bridge/index.desktop"
-          : "desktop-bridge/index"
+          ? "/desktop-bridge/index.desktop"
+          : "/desktop-bridge/index"
+      },
+      {
+        find: /\/sqlite$/gm,
+        replacement: isDesktop ? "/sqlite/index.desktop" : "/sqlite/index"
       }
     ]
   },
@@ -101,6 +118,8 @@ export default defineConfig({
     format: "es",
     rollupOptions: {
       output: {
+        assetFileNames: "assets/[name]-[hash:12][extname]",
+        chunkFileNames: "assets/[name]-[hash:12].js",
         inlineDynamicImports: true
       }
     }
@@ -129,13 +148,30 @@ export default defineConfig({
             manifest: WEB_MANIFEST,
             injectRegister: null,
             srcDir: "",
-            filename: "service-worker.ts"
+            filename: "service-worker.ts",
+            mode: "production",
+            workbox: { mode: "production" },
+            injectManifest: {
+              globPatterns: ["**/*.{js,css,html,wasm}", "**/open-sans-*.woff2"],
+              globIgnores: [
+                "**/node_modules/**/*",
+                "**/code-lang-*.js",
+                "pdf.worker.min.js"
+              ]
+            }
           })
         ]),
     react({
       plugins: isTesting
         ? undefined
-        : [["swc-plugin-react-remove-properties", {}]]
+        : [
+            [
+              "@swc/plugin-react-remove-properties",
+              {
+                properties: ["^data-test-id$"]
+              }
+            ]
+          ]
     }),
     envCompatible({
       prefix: "NN_",
@@ -143,10 +179,20 @@ export default defineConfig({
     }),
     svgrPlugin({
       svgrOptions: {
-        icon: true
+        icon: true,
+        namedExport: "ReactComponent"
         // ...svgr options (https://react-svgr.com/docs/options/)
       }
-    })
+    }),
+    ...(isDesktop
+      ? []
+      : [
+          prefetchPlugin({
+            excludeFn: (assetName) =>
+              assetName.includes("wa-sqlite-async") ||
+              !assetName.includes("wa-sqlite")
+          })
+        ])
   ]
 });
 
@@ -171,6 +217,61 @@ function emitEditorStyles(): OutputPlugin {
           });
         }
       }
+    }
+  };
+}
+
+function prefetchPlugin(options?: {
+  excludeFn?: (assetName: string) => boolean;
+}): Plugin {
+  let config: ResolvedConfig;
+  return {
+    name: "vite-plugin-bundle-prefetch",
+    apply: "build",
+    configResolved(resolvedConfig: ResolvedConfig) {
+      // store the resolved config
+      config = resolvedConfig;
+    },
+    transformIndexHtml(
+      html: string,
+      ctx: {
+        path: string;
+        filename: string;
+        bundle?: import("rollup").OutputBundle;
+        chunk?: import("rollup").OutputChunk;
+      }
+    ) {
+      const bundles = Object.keys(ctx.bundle ?? {});
+      const isLegacy = bundles.some((bundle) => bundle.includes("legacy"));
+      if (isLegacy) {
+        //legacy build won't add prefetch
+        return html;
+      }
+      // remove map files
+      let modernBundles = bundles.filter(
+        (bundle) => bundle.endsWith(".map") === false
+      );
+      const excludeFn = options?.excludeFn;
+      if (excludeFn) {
+        modernBundles = modernBundles.filter((bundle) => !excludeFn(bundle));
+      }
+      // Remove existing files and concatenate them into link tags
+      const prefechBundlesString = modernBundles
+        .filter((bundle) => html.includes(bundle) === false)
+        .map((bundle) => `<link rel="prefetch" href="${config.base}${bundle}">`)
+        .join("\n");
+
+      // Use regular expression to get the content within <head> </head>
+      const headContent = html.match(/<head>([\s\S]*)<\/head>/)?.[1] ?? "";
+      // Insert the content of prefetch into the head
+      const newHeadContent = `${headContent}${prefechBundlesString}`;
+      // Replace the original head
+      html = html.replace(
+        /<head>([\s\S]*)<\/head>/,
+        `<head>${newHeadContent}</head>`
+      );
+
+      return html;
     }
   };
 }

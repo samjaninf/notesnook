@@ -45,6 +45,26 @@ const defaultVariant: ThemeUIStyleObject = {
   }
 };
 
+const borderless: ThemeUIStyleObject = {
+  variant: "forms.input",
+  outline: "none",
+  boxShadow: "none",
+  ":-webkit-autofill": {
+    WebkitTextFillColor: "var(--paragraph)",
+    caretColor: "var(--paragraph)",
+    fontSize: "inherit"
+  },
+  ":focus": {
+    bg: "var(--background-secondary)"
+  },
+  ":hover:not(:focus)": {
+    outline: "var(--background-secondary)"
+  },
+  "::placeholder": {
+    color: "placeholder"
+  }
+};
+
 const clean: ThemeUIStyleObject = {
   variant: "forms.input",
   outline: "none",
@@ -59,17 +79,25 @@ const clean: ThemeUIStyleObject = {
 
 const error: ThemeUIStyleObject = {
   variant: "forms.input",
-  outline: "1.5px solid var(--error)",
+  outline: "1.5px solid var(--accent-error)",
   ":focus": {
-    outline: "2px solid var(--error)"
+    outline: "2px solid var(--accent-error)"
   },
   ":hover:not(:focus)": {
-    outline: "1.5px solid var(--error)"
+    outline: "1.5px solid var(--accent-error)"
+  }
+};
+
+const radio: ThemeUIStyleObject = {
+  "input:focus ~ &": {
+    backgroundColor: `border-secondary`
   }
 };
 
 export const inputVariants = {
   input: defaultVariant,
+  borderless,
   error,
-  clean
+  clean,
+  radio
 };

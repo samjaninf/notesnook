@@ -17,14 +17,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import "./polyfills";
-import "@notesnook/core/dist/types";
 import { getCurrentHash, getCurrentPath, makeURL } from "./navigation";
 import Config from "./utils/config";
-
-import { initalizeLogger, logger } from "./utils/logger";
-import { AuthProps } from "./views/auth";
-import { initializeFeatureChecks } from "./utils/feature-check";
+import type { AuthProps } from "./views/auth";
+import {
+  initializeFeatureChecks,
+  isFeatureSupported
+} from "./utils/feature-check";
+import { initializeLogger } from "./utils/logger";
 
 type Route<TProps = null> = {
   component: () => Promise<{
@@ -52,6 +52,10 @@ export type Routes = keyof typeof routes;
 // | "default";
 
 const routes = {
+  "/checkout": {
+    component: () => import("./views/checkout"),
+    props: {}
+  },
   "/account/recovery": {
     component: () => import("./views/recovery"),
     props: { route: "methods" }
@@ -102,7 +106,7 @@ const sessionExpiryExceptions: Routes[] = [
 
 function getRoute(): RouteWithPath<AuthProps> | RouteWithPath {
   const path = getCurrentPath() as Routes;
-  logger.info(`Getting route for path: ${path}`);
+  // logger.info(`Getting route for path: ${path}`);
 
   const signup = redirectToRegistration(path);
   const sessionExpired = isSessionExpired(path);
@@ -129,7 +133,7 @@ function redirectToRegistration(path: Routes): RouteWithPath<AuthProps> | null {
 function isSessionExpired(path: Routes): RouteWithPath<AuthProps> | null {
   const isSessionExpired = Config.get("sessionExpired", false);
   if (isSessionExpired && !sessionExpiryExceptions.includes(path)) {
-    logger.info(`User session has expired. Routing to /sessionexpired`);
+    // logger.info(`User session has expired. Routing to /sessionexpired`);
 
     window.history.replaceState(
       {},
@@ -141,12 +145,32 @@ function isSessionExpired(path: Routes): RouteWithPath<AuthProps> | null {
   return null;
 }
 
+function checkPrerequisites() {
+  if (!window.isSecureContext)
+    throw new Error("Please run Notesnook in a secure (https) context.");
+  if (!navigator.locks)
+    throw new Error("Your browser does not support the Web Locks API.");
+  if (!crypto.subtle)
+    throw new Error("Your browser does not support the SubtleCrypto API.");
+  if (!window.indexedDB && !isFeatureSupported("opfs"))
+    throw new Error("Your browser does not support IndexedDB or OPFS.");
+  if (!window.WebAssembly)
+    throw new Error("Your browser does not support WebAssembly.");
+}
+
 export async function init() {
-  await initalizeLogger();
   await initializeFeatureChecks();
 
+  checkPrerequisites();
+
   const { path, route } = getRoute();
-  return { ...route, path };
+
+  const [{ default: Component }] = await Promise.all([
+    route.component(),
+    initializeLogger()
+  ]);
+
+  return { Component, path, props: route.props };
 }
 
 function shouldSkipInitiation() {

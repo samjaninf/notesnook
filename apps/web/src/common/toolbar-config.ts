@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { getDefaultPresets, ToolbarGroupDefinition } from "@notesnook/editor";
 import { db } from "./db";
+import { migrateToolbar } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
 
 const defaultPresets = getDefaultPresets();
 export type PresetId = "default" | "minimal" | "custom";
@@ -29,21 +31,27 @@ export type Preset = {
   editable?: boolean;
 };
 const presets: Record<PresetId, Preset> = {
-  default: { id: "default", title: "Default", tools: defaultPresets.default },
+  default: {
+    id: "default",
+    title: strings.default(),
+    tools: defaultPresets.default
+  },
   minimal: {
     id: "minimal",
-    title: "Minimal",
+    title: strings.minimal(),
     tools: defaultPresets.minimal
   },
-  custom: { id: "custom", title: "Custom", tools: [], editable: true }
+  custom: { id: "custom", title: strings.custom(), tools: [], editable: true }
 };
 
-export function getCurrentPreset() {
-  const preset = db.settings?.getToolbarConfig("desktop");
+export async function getCurrentPreset() {
+  let preset = db.settings.getToolbarConfig("desktop");
   if (!preset) return presets.default;
+  preset = await migrateToolbar("desktop", preset);
+
   switch (preset.preset as PresetId) {
     case "custom":
-      presets.custom.tools = preset.config;
+      presets.custom.tools = preset.config || [];
       return presets.custom;
     case "minimal":
       return presets.minimal;

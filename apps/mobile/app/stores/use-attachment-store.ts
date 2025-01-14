@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import create from "zustand";
+import { useTabStore } from "../screens/editor/tiptap/use-tab-store";
 import { editorController } from "../screens/editor/tiptap/utils";
 
 export type AttachmentGroupProgress = {
@@ -28,6 +29,7 @@ export type AttachmentGroupProgress = {
   canceled?: boolean;
   success?: boolean;
   error?: any;
+  message?: string;
 };
 
 interface AttachmentStore {
@@ -52,13 +54,13 @@ interface AttachmentStore {
     type: "upload" | "download"
   ) => void;
   downloading?: {
-    [groupId: string]: AttachmentGroupProgress | undefined;
+    [groupId: string]: Partial<AttachmentGroupProgress> | undefined;
   };
-  setDownloading: (data: AttachmentGroupProgress) => void;
+  setDownloading: (data: Partial<AttachmentGroupProgress>) => void;
   uploading?: {
-    [groupId: string]: AttachmentGroupProgress | undefined;
+    [groupId: string]: Partial<AttachmentGroupProgress> | undefined;
   };
-  setUploading: (data: AttachmentGroupProgress) => void;
+  setUploading: (data: Partial<AttachmentGroupProgress>) => void;
 }
 
 export const useAttachmentStore = create<AttachmentStore>((set, get) => ({
@@ -66,10 +68,13 @@ export const useAttachmentStore = create<AttachmentStore>((set, get) => ({
   remove: (hash) => {
     const progress = get().progress;
     if (!progress) return;
-    editorController.current?.commands.setAttachmentProgress({
-      hash: hash,
-      progress: 100
-    });
+    editorController.current?.commands.setAttachmentProgress(
+      {
+        hash: hash,
+        progress: 100
+      },
+      useTabStore.getState().currentTab
+    );
     progress[hash] = null;
     set({ progress: { ...progress } });
   },
@@ -80,11 +85,14 @@ export const useAttachmentStore = create<AttachmentStore>((set, get) => ({
     const progressPercentage =
       type === "upload" ? sent / total : recieved / total;
 
-    editorController.current?.commands.setAttachmentProgress({
-      hash: hash,
-      //@ts-ignore
-      progress: Math.round(Math.max(progressPercentage * 100, 0))
-    });
+    editorController.current?.commands.setAttachmentProgress(
+      {
+        hash: hash,
+        //@ts-ignore
+        progress: Math.round(Math.max(progressPercentage * 100, 0))
+      },
+      useTabStore.getState().currentTab
+    );
     set({ progress: { ...progress } });
   },
   encryptionProgress: 0,
@@ -93,18 +101,22 @@ export const useAttachmentStore = create<AttachmentStore>((set, get) => ({
 
   downloading: {},
   setDownloading: (data) =>
-    set({
-      downloading: {
-        ...get().downloading,
-        [data.groupId]: data?.canceled ? undefined : data
-      }
-    }),
+    !data.groupId
+      ? null
+      : set({
+          downloading: {
+            ...get().downloading,
+            [data.groupId]: data
+          }
+        }),
   uploading: {},
   setUploading: (data) =>
-    set({
-      uploading: {
-        ...get().uploading,
-        [data.groupId]: data?.canceled ? undefined : data
-      }
-    })
+    !data.groupId
+      ? null
+      : set({
+          uploading: {
+            ...get().uploading,
+            [data.groupId]: data
+          }
+        })
 }));

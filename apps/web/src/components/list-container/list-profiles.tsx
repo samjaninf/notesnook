@@ -20,137 +20,137 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import Note from "../note";
 import Notebook from "../notebook";
 import Tag from "../tag";
-import Topic from "../topic";
 import TrashItem from "../trash-item";
 import { db } from "../../common/db";
-import { getTotalNotes } from "@notesnook/common";
 import Reminder from "../reminder";
-import { useMemo } from "react";
-import {
-  ReferencesWithDateEdited,
-  ItemWrapper,
-  Item,
-  NotebookReference,
-  NotebookType,
-  Reference
-} from "./types";
+import { Context } from "./types";
+import { getSortValue } from "@notesnook/core";
+import { GroupingKey, Item } from "@notesnook/core";
+import { isNoteResolvedData } from "@notesnook/common";
+import { Attachment } from "../attachment";
 
 const SINGLE_LINE_HEIGHT = 1.4;
 const DEFAULT_LINE_HEIGHT =
   (document.getElementById("p")?.clientHeight || 16) - 1;
-export const DEFAULT_ITEM_HEIGHT = SINGLE_LINE_HEIGHT * 2 * DEFAULT_LINE_HEIGHT;
+export const DEFAULT_ITEM_HEIGHT = SINGLE_LINE_HEIGHT * 4 * DEFAULT_LINE_HEIGHT;
 
-const NotesProfile: ItemWrapper = ({ item, type, context, compact }) => {
-  const references = useMemo(
-    () => getReferences(item.id, item.notebooks as Item[], context?.type),
-    [item, context]
-  );
-
-  return (
-    <Note
-      compact={compact}
-      item={item}
-      tags={getTags(item)}
-      references={references}
-      reminder={getReminder(item.id)}
-      date={getDate(item, type)}
-      context={context}
-    />
-  );
+type ListItemWrapperProps = {
+  group?: GroupingKey;
+  item: Item;
+  data?: unknown;
+  context?: Context;
+  compact?: boolean;
 };
 
-const NotebooksProfile: ItemWrapper = ({ item, type }) => (
-  <Notebook
-    item={item}
-    totalNotes={getTotalNotes(item)}
-    date={getDate(item, type)}
-  />
-);
+export function ListItemWrapper(props: ListItemWrapperProps) {
+  const { group, compact, context, item, data } = props;
 
-const TrashProfile: ItemWrapper = ({ item, type }) => (
-  <TrashItem item={item} date={getDate(item, type)} />
-);
-
-export const ListProfiles = {
-  home: NotesProfile,
-  notebooks: NotebooksProfile,
-  notes: NotesProfile,
-  reminders: Reminder,
-  tags: Tag,
-  topics: Topic,
-  trash: TrashProfile
-} as const;
-
-function getTags(item: Item) {
-  let tags = item.tags as Item[];
-  if (tags)
-    tags = tags.slice(0, 3).reduce((prev, curr) => {
-      const tag = db.tags?.tag(curr);
-      if (tag) prev.push(tag);
-      return prev;
-    }, [] as Item[]);
-  return tags || [];
-}
-
-function getReferences(
-  noteId: string,
-  notebooks: Item[],
-  contextType?: string
-): ReferencesWithDateEdited | undefined {
-  if (["topic", "notebook"].includes(contextType || "")) return;
-
-  const references: Reference[] = [];
-  let latestDateEdited = 0;
-
-  db.relations
-    ?.to({ id: noteId, type: "note" }, "notebook")
-    ?.forEach((notebook: any) => {
-      references.push({
-        type: "notebook",
-        url: `/notebooks/${notebook.id}`,
-        title: notebook.title
-      } as Reference);
-
-      if (latestDateEdited < notebook.dateEdited)
-        latestDateEdited = notebook.dateEdited;
-    });
-
-  notebooks?.forEach((curr) => {
-    const topicId = (curr as NotebookReference).topics[0];
-    const notebook = db.notebooks?.notebook(curr.id)?.data as NotebookType;
-    if (!notebook) return;
-
-    const topic = notebook.topics.find((t: Item) => t.id === topicId);
-    if (!topic) return;
-
-    references.push({
-      url: `/notebooks/${curr.id}/${topicId}`,
-      title: topic.title,
-      type: "topic"
-    });
-    if (latestDateEdited < (topic.dateEdited as number))
-      latestDateEdited = topic.dateEdited as number;
-  });
-
-  return { dateEdited: latestDateEdited, references: references.slice(0, 3) };
-}
-
-function getReminder(noteId: string) {
-  return db.relations?.from({ id: noteId, type: "note" }, "reminder")[0];
-}
-
-function getDate(item: Item, groupType: keyof typeof ListProfiles): number {
-  const sortBy = db.settings?.getGroupOptions(groupType).sortBy;
-  switch (sortBy) {
-    case "dateEdited":
-      return item.dateEdited;
-    case "dateCreated":
-      return item.dateCreated;
-    case "dateModified":
-      return item.dateModified;
-    case "dateDeleted":
-      return item.dateDeleted;
+  switch (item.type) {
+    case "note": {
+      return (
+        <Note
+          compact={compact}
+          item={item}
+          date={getDate(item, group)}
+          context={context}
+          {...(isNoteResolvedData(data) ? data : {})}
+        />
+      );
+    }
+    case "notebook":
+      return (
+        <Notebook
+          item={item}
+          totalNotes={typeof data === "number" ? data : 0}
+          date={getDate(item, group)}
+          compact={compact}
+        />
+      );
+    case "trash":
+      return <TrashItem item={item} date={getDate(item, group)} />;
+    case "reminder":
+      return <Reminder item={item} compact={compact} />;
+    case "tag":
+      return (
+        <Tag item={item} totalNotes={typeof data === "number" ? data : 0} />
+      );
+    case "attachment":
+      return <Attachment item={item} compact={compact} />;
     default:
-      return item.dateCreated;
+      return null;
   }
+}
+
+type PlaceholderData = {
+  padding: [number, number, number, number];
+  lines: { height: number; width: "random" | string | number }[];
+  gap?: number;
+};
+const COMPACT_PLACEHOLDER_ITEM_DATA: PlaceholderData = {
+  padding: [6, 5, 6, 5],
+  lines: [{ height: 16, width: `random` }]
+};
+const FULL_PLACEHOLDER_ITEM_DATA: PlaceholderData = {
+  padding: [10, 5, 10, 5],
+  gap: 5,
+  lines: [
+    {
+      height: 16,
+      width: "50%"
+    },
+    {
+      height: 12,
+      width: "100%"
+    },
+    {
+      height: 12,
+      width: "70%"
+    },
+    {
+      height: 10,
+      width: 30
+    }
+  ]
+};
+export function getListItemDefaultHeight(
+  group: GroupingKey | undefined,
+  compact: boolean | undefined
+) {
+  const data = getListItemPlaceholderData(group, compact);
+  let height = data.padding[0] + data.padding[2];
+  if (data.gap) height += data.gap * data.lines.length - 1;
+  data.lines.forEach((line) => (height += line.height));
+  return height;
+}
+export function getListItemPlaceholderData(
+  group: GroupingKey | undefined,
+  compact: boolean | undefined
+): PlaceholderData {
+  switch (group) {
+    case "home":
+    case "favorites":
+    case "notes":
+    case "notebooks":
+    case "trash":
+    case "reminders":
+      if (compact) return COMPACT_PLACEHOLDER_ITEM_DATA;
+      return FULL_PLACEHOLDER_ITEM_DATA;
+    case "tags":
+    default:
+      return COMPACT_PLACEHOLDER_ITEM_DATA;
+  }
+}
+
+function getDate(item: Item, groupType?: GroupingKey): number {
+  return (
+    getSortValue(
+      groupType
+        ? db.settings.getGroupOptions(groupType)
+        : {
+            sortBy: "dateEdited",
+            sortDirection: "desc"
+          },
+      item
+    ) || 0
+  );
 }

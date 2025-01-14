@@ -71,14 +71,11 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>localhost</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
-		</dict>
+		 <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a picture and add it to your note.</string>
@@ -88,8 +85,11 @@
 	<string>Only required by library- not requested in application</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Add photos from gallery to your note.</string>
+	<key>ReactNativeQuickSQLite_AppGroup</key>
+	<string>group.org.streetwriters.notesnook</string>
 	<key>UIAppFonts</key>
 	<array>
+		<string>OpenSans-Italic.ttf</string>
 		<string>OpenSans-SemiBold.ttf</string>
 		<string>OpenSans-Regular.ttf</string>
 		<string>MaterialCommunityIcons.ttf</string>
@@ -112,7 +112,7 @@
 	<string>BootSplash</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

@@ -25,17 +25,18 @@ import {
   DimensionValue,
   TextStyle,
   View,
-  ViewStyle
+  ViewStyle,
+  useWindowDimensions
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useUserStore } from "../../../stores/use-user-store";
 import { SIZE } from "../../../utils/size";
 import NativeTooltip from "../../../utils/tooltip";
 import { ProTag } from "../../premium/pro-tag";
-import { PressableButton, PressableButtonProps, useButton } from "../pressable";
+import { Pressable, PressableProps, useButton } from "../pressable";
 import Heading from "../typography/heading";
 import Paragraph from "../typography/paragraph";
-export interface ButtonProps extends PressableButtonProps {
+export interface ButtonProps extends PressableProps {
   height?: number;
   icon?: string;
   fontSize?: number;
@@ -92,10 +93,13 @@ export const Button = ({
   });
   const textColor = buttonType?.text ? buttonType.text : text;
 
+  const { fontScale } = useWindowDimensions();
+  const growFactor = 1 + (fontScale - 1) / 10;
+
   const Component = bold ? Heading : Paragraph;
 
   return (
-    <PressableButton
+    <Pressable
       {...restProps}
       fwdRef={fwdRef}
       onPress={onPress}
@@ -108,7 +112,7 @@ export const Button = ({
           NativeTooltip.show(event, tooltipText, NativeTooltip.POSITIONS.TOP);
         }
       }}
-      disabled={loading}
+      disabled={loading || restProps.disabled}
       type={type}
       accentColor={accentColor}
       accentText={accentText}
@@ -116,15 +120,19 @@ export const Button = ({
       customSelectedColor={buttonType?.selected}
       customOpacity={buttonType?.opacity}
       customAlpha={buttonType?.alpha}
-      customStyle={{
-        height: height,
-        width: (width as DimensionValue) || undefined,
+      style={{
+        height: typeof height === "number" ? height * growFactor : height,
+        width:
+          typeof width === "number"
+            ? width * growFactor
+            : (width as DimensionValue) || undefined,
         paddingHorizontal: 12,
         borderRadius: 5,
         alignSelf: "center",
         justifyContent: "center",
         alignItems: "center",
         flexDirection: "row",
+        opacity: restProps?.disabled ? 0.5 : 1,
         ...(style as ViewStyle)
       }}
     >
@@ -143,7 +151,6 @@ export const Button = ({
 
       {!title ? null : (
         <Component
-          animated={false}
           color={textColor as string}
           size={fontSize}
           numberOfLines={1}
@@ -177,6 +184,6 @@ export const Button = ({
           size={iconSize}
         />
       ) : null}
-    </PressableButton>
+    </Pressable>
   );
 };

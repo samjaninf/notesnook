@@ -21,26 +21,15 @@ import { db } from "../common/db";
 import AllNotes from "../views/all-notes";
 import Notebooks from "../views/notebooks";
 import Notes from "../views/notes";
-import Search from "../views/search";
 import Tags from "../views/tags";
-import Topics from "../views/topics";
+import Notebook from "../views/notebook";
 import { navigate } from ".";
 import Trash from "../views/trash";
 import { store as notestore } from "../stores/note-store";
-import { store as nbstore } from "../stores/notebook-store";
 import Reminders from "../views/reminders";
-import { defineRoutes } from "./types";
-import React from "react";
-import { RouteContainerButtons } from "../components/route-container";
+import { RouteResult, defineRoutes } from "./types";
 import { CREATE_BUTTON_MAP } from "../common";
-
-type RouteResult = {
-  key: string;
-  type: "notes" | "notebooks" | "reminders" | "trash" | "tags" | "search";
-  title?: string;
-  component: React.FunctionComponent;
-  buttons?: RouteContainerButtons;
-};
+import { strings } from "@notesnook/intl";
 
 function defineRoute(route: RouteResult): RouteResult {
   return route;
@@ -51,12 +40,12 @@ const routes = defineRoutes({
     defineRoute({
       key: "home",
       type: "notes",
-      title: "Notes",
+      title: strings.routes.Notes(),
       component: AllNotes,
       buttons: {
         create: CREATE_BUTTON_MAP.notes,
         search: {
-          title: "Search notes"
+          title: strings.searchANote()
         }
       }
     }),
@@ -64,76 +53,70 @@ const routes = defineRoutes({
     defineRoute({
       key: "notebooks",
       type: "notebooks",
-      title: "Notebooks",
+      title: strings.routes.Notebooks(),
       component: Notebooks,
       buttons: {
         create: CREATE_BUTTON_MAP.notebooks,
         search: {
-          title: "Search notebooks"
+          title: strings.searchNotebooks()
         }
       }
     }),
-  "/notebooks/:notebookId": ({ notebookId }) => {
-    const notebook = db.notebooks?.notebook(notebookId);
-    if (!notebook) return false;
-    nbstore.setSelectedNotebook(notebookId);
-    notestore.setContext({
-      type: "notebook",
-      value: { id: notebookId }
-    });
-
+  "/notebooks/:rootId/:notebookId?": ({ rootId, notebookId }) => {
     return defineRoute({
       key: "notebook",
       type: "notes",
-      component: Topics,
+      noCache: true,
+      component: Notebook,
+      props: {
+        rootId,
+        notebookId
+      },
+      //  () => (
+      //   <Notebook key={rootId} rootId={rootId} notebookId={notebookId} />
+      // ),
       buttons: {
         create: CREATE_BUTTON_MAP.notes,
         back: {
-          title: "Go back to notebooks",
+          title: strings.goBackToNotebooks(),
           onClick: () => navigate("/notebooks")
         },
         search: {
-          title: `Search ${notebook.title} notes`
+          title: strings.searchANote()
         }
       }
     });
   },
-  "/notebooks/:notebookId/:topicId": ({ notebookId, topicId }) => {
-    const notebook = db.notebooks?.notebook(notebookId);
-    const topic = notebook?.topics?.topic(topicId)?._topic;
-    if (!topic) return false;
-    nbstore.setSelectedNotebook(notebookId);
-    notestore.setContext({
-      type: "topic",
-      value: { id: notebookId, topic: topicId }
-    });
-    return defineRoute({
-      key: "notebook",
-      type: "notes",
-      title: topic.title,
-      component: Topics,
-      buttons: {
-        create: CREATE_BUTTON_MAP.notes,
-        back: {
-          title: `Go back to ${notebook.title}`,
-          onClick: () => navigate(`/notebooks/${notebookId}`)
-        },
-        search: {
-          title: `Search ${notebook.title} ${topic.title} notes`
-        }
-      }
-    });
-  },
+  // "/notebooks/:rootId/:notebookId": ({ notebookId, rootId }) => {
+  //   return defineRoute({
+  //     key: "notebook",
+  //     type: "notes",
+  //     // title: topic.title,
+  //     component: () => (
+  //       <Notebook key={rootId} rootId={rootId} notebookId={notebookId} />
+  //     ),
+  //     buttons: {
+  //       create: CREATE_BUTTON_MAP.notes,
+  //       back: {
+  //         title: `Go back to notebooks`, // ${notebook.title}`,
+  //         onClick: () => navigate(`/notebooks/${rootId}`)
+  //       },
+  //       search: {
+  //         title: `Search notes`
+  //       }
+  //     }
+  //   });
+  // },
   "/favorites": () => {
     notestore.setContext({ type: "favorite" });
     return defineRoute({
       key: "notes",
-      title: "Favorites",
+      title: strings.routes.Favorites(),
       type: "notes",
       component: Notes,
       buttons: {
         search: {
-          title: "Search favorite notes"
+          title: strings.searchANote()
         }
       }
     });
@@ -141,13 +124,13 @@ const routes = defineRoutes({
   "/reminders": () => {
     return defineRoute({
       key: "reminders",
-      title: "Reminders",
+      title: strings.routes.Reminders(),
       type: "reminders",
       component: Reminders,
       buttons: {
         create: CREATE_BUTTON_MAP.reminders,
         search: {
-          title: "Search reminders"
+          title: strings.searchInRoute("Reminders")
         }
       }
     });
@@ -156,68 +139,65 @@ const routes = defineRoutes({
     defineRoute({
       key: "trash",
       type: "trash",
-      title: "Trash",
+      title: strings.routes.Trash(),
       component: Trash,
       buttons: {
         search: {
-          title: "Search trash"
+          title: strings.searchInRoute("Trash")
         }
       }
     }),
   "/tags": () =>
     defineRoute({
       key: "tags",
-      title: "Tags",
+      title: strings.routes.Tags(),
       type: "tags",
       component: Tags,
       buttons: {
         create: CREATE_BUTTON_MAP.tags,
         search: {
-          title: "Search tags"
+          title: strings.searchInRoute("Tags")
         }
       }
     }),
   "/tags/:tagId": ({ tagId }) => {
-    const tag = db.tags?.tag(tagId);
-    if (!tag) return false;
-    const { id } = tag;
-    notestore.setContext({ type: "tag", value: id });
-    const title = db.tags?.alias(id);
+    notestore.setContext({ type: "tag", id: tagId });
     return defineRoute({
       key: "notes",
       type: "notes",
-      title: `#${title}`,
+      title: async () => {
+        const tag = await db.tags.tag(tagId);
+        if (!tag) return;
+        return `#${tag.title}`;
+      },
       component: Notes,
       buttons: {
         create: CREATE_BUTTON_MAP.notes,
         back: {
-          title: "Go back to tags",
+          title: strings.goBackToTags(),
           onClick: () => navigate("/tags")
         },
         search: {
-          title: `Search #${title} notes`
+          title: strings.searchANote()
         }
       }
     });
   },
   "/colors/:colorId": ({ colorId }) => {
-    const color = db.colors?.tag(colorId);
-    if (!color) {
-      navigate("/");
-      return false;
-    }
-    const { id } = color;
-    const title = db.colors?.alias(id);
-    notestore.setContext({ type: "color", value: id });
+    notestore.setContext({ type: "color", id: colorId });
     return defineRoute({
       key: "notes",
       type: "notes",
-      title: title,
+      title: async () => {
+        const color = await db.colors.color(colorId);
+        if (!color) return;
+        return `${color.title}`;
+      },
       component: Notes,
       buttons: {
         create: CREATE_BUTTON_MAP.notes,
         search: {
-          title: `Search ${title} colored notes`
+          title: strings.searchANote()
         }
       }
     });
@@ -226,29 +206,16 @@ const routes = defineRoutes({
     notestore.setContext({ type: "monographs" });
     return defineRoute({
       key: "notes",
-      title: "Monographs",
+      title: strings.routes.Monographs(),
       type: "notes",
       component: Notes,
       buttons: {
         search: {
-          title: "Search monograph notes"
+          title: strings.searchInRoute("Monographs")
         }
       }
     });
-  },
-  "/search/:type": ({ type }) =>
-    defineRoute({
-      key: "general",
-      type: "search",
-      title: "Search",
-      component: () => <Search type={type} />,
-      buttons: {
-        back: {
-          title: `Go back to ${type}`,
-          onClick: () => window.history.back()
-        }
-      }
-    })
+  }
 });
 
 export default routes;

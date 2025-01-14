@@ -18,11 +18,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Readability } from "@mozilla/readability";
-import { injectCss } from "./utils";
+import { injectCss } from "./utils.js";
 import { app, h, text } from "hyperapp";
-import { getInlinedNode, toBlob, toJpeg, toPng } from "./domtoimage";
-import { Config, InlineOptions } from "./types";
-import { FetchOptions } from "./fetch";
+import { getInlinedNode, toBlob, toJpeg, toPng } from "./domtoimage.js";
+import { Config, InlineOptions } from "./types.js";
+import { FetchOptions } from "./fetch.js";
 
 type ReadabilityEnhanced = Readability<string> & {
   PRESENTATIONAL_ATTRIBUTES: string[];
@@ -38,7 +38,7 @@ const BLACKLIST = [CLASSES.nodeSelected, CLASSES.nodeSelectionContainer];
 
 const inlineOptions: InlineOptions = {
   fonts: false,
-  images: true,
+  images: false,
   stylesheets: true
 };
 
@@ -198,7 +198,11 @@ function enterNodeSelectionMode(doc: Document, config?: Config) {
           const inlined = await getInlinedNode(node as HTMLElement, {
             raster: false,
             fetchOptions: resolveFetchOptions(config),
-            inlineOptions
+            inlineOptions: {
+              ...inlineOptions,
+              images: config?.images,
+              inlineImages: config?.inlineImages
+            }
           });
           if (!inlined) continue;
           div.appendChild(inlined);

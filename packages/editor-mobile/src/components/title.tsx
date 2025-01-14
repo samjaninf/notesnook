@@ -18,10 +18,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { getFontById } from "@notesnook/editor";
+import { replaceDateTime } from "@notesnook/editor";
 import React, { RefObject, useCallback, useEffect, useRef } from "react";
 import { EditorController } from "../hooks/useEditorController";
+import { useTabContext } from "../hooks/useTabStore";
 import styles from "./styles.module.css";
-import { replaceDateTime } from "@notesnook/editor/dist/extensions/date-time";
 function Title({
   controller,
   title,
@@ -29,7 +30,8 @@ function Title({
   readonly,
   fontFamily,
   dateFormat,
-  timeFormat
+  timeFormat,
+  loading
 }: {
   controller: RefObject<EditorController>;
   title: string;
@@ -38,11 +40,11 @@ function Title({
   fontFamily: string;
   dateFormat: string;
   timeFormat: string;
+  loading?: boolean;
 }) {
+  const tab = useTabContext();
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const titleSizeDiv = useRef<HTMLDivElement>(null);
-  const emitUpdate = useRef(true);
-  global.editorTitle = titleRef;
 
   const resizeTextarea = useCallback(() => {
     if (!titleSizeDiv.current || !titleRef.current) return;
@@ -53,10 +55,8 @@ function Title({
 
   useEffect(() => {
     if (titleRef.current) {
-      emitUpdate.current = false;
       titleRef.current.value = title;
       resizeTextarea();
-      emitUpdate.current = true;
     }
 
     window.addEventListener("resize", resizeTextarea);
@@ -65,7 +65,22 @@ function Title({
     };
   }, [resizeTextarea, title]);
 
-  return (
+  useEffect(() => {
+    globalThis.editorTitles[tab.id] = titleRef;
+    return () => {
+      globalThis.editorTitles[tab.id] = undefined;
+    };
+  }, [tab.id, titleRef]);
+
+  useEffect(() => {
+    if (!loading) {
+      setTimeout(() => {
+        resizeTextarea();
+      }, 300);
+    }
+  }, [loading, resizeTextarea]);
+
+  return loading ? null : (
     <>
       <div
         ref={titleSizeDiv}
@@ -96,6 +111,7 @@ function Title({
         rows={1}
         contentEditable={!readonly}
         disabled={readonly}
+        defaultValue={title}
         style={{
           height: 40,
           minHeight: 40,
@@ -117,10 +133,19 @@ function Title({
           overflowY: "hidden"
         }}
         maxLength={1000}
-        onInput={() => {
+        onInput={(event) => {
           resizeTextarea();
+          (event.target as HTMLTextAreaElement).value = replaceDateTime(
+            (event.target as HTMLTextAreaElement).value,
+            dateFormat,
+            timeFormat as "12-hour" | "24-hour"
+          );
+          controller.current?.titleChange(
+            (event.target as HTMLTextAreaElement).value
+          );
         }}
         onKeyDown={(e) => {
+          const editor = editors[tab.id];
           if (e.key === "Enter") {
             e.preventDefault();
             e.stopPropagation();
@@ -129,16 +154,6 @@ function Title({
         }}
         onPaste={() => {
           resizeTextarea();
-        }}
-        onChange={(event) => {
-          resizeTextarea();
-          if (!emitUpdate.current) return;
-          event.target.value = replaceDateTime(
-            event.target.value,
-            dateFormat,
-            timeFormat as "12-hour" | "24-hour"
-          );
-          controller.current?.titleChange(event.target.value);
         }}
         placeholder={titlePlaceholder}
       />
@@ -151,7 +166,8 @@ export default React.memo(Title, (prev, next) => {
     prev.title !== next.title ||
     prev.titlePlaceholder !== next.titlePlaceholder ||
     prev.readonly !== next.readonly ||
-    prev.fontFamily !== next.fontFamily
+    prev.fontFamily !== next.fontFamily ||
+    prev.loading !== next.loading
   )
     return false;
 

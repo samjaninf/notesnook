@@ -17,6 +17,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { sanitizeFilename } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
+import { useThemeColors, VariantsWithStaticColors } from "@notesnook/theme";
 import Clipboard from "@react-native-clipboard/clipboard";
 import React, {
   Dispatch,
@@ -26,16 +29,16 @@ import React, {
   useState
 } from "react";
 import { ActivityIndicator, Linking, Platform, View } from "react-native";
+import RNFetchBlob from "react-native-blob-util";
 import { FlatList } from "react-native-gesture-handler";
 import * as ScopedStorage from "react-native-scoped-storage";
-import RNFetchBlob from "react-native-blob-util";
 import { db } from "../../common/database";
-import Storage from "../../common/database/storage";
+import filesystem from "../../common/filesystem";
 import DialogHeader from "../../components/dialog/dialog-header";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import Input from "../../components/ui/input";
-import { PressableButton } from "../../components/ui/pressable";
+import { Pressable } from "../../components/ui/pressable";
 import Seperator from "../../components/ui/seperator";
 import { SvgView } from "../../components/ui/svg";
 import Heading from "../../components/ui/typography/heading";
@@ -44,32 +47,30 @@ import useTimer from "../../hooks/use-timer";
 import {
   eSendEvent,
   presentSheet,
-  ToastEvent
+  ToastManager
 } from "../../services/event-manager";
-import { useThemeColors, VariantsWithStaticColors } from "@notesnook/theme";
 import { useUserStore } from "../../stores/use-user-store";
 import { eCloseSheet } from "../../utils/events";
 import { SIZE } from "../../utils/size";
 import { sleep } from "../../utils/time";
-import { sanitizeFilename } from "@notesnook/common";
 const mfaMethods: MFAMethod[] = [
   {
     id: "app",
-    title: "Setup using an Authenticator app",
-    body: "Use an authenticator app like Google Authenticator on your phone to get authentication codes",
+    title: strings.mfaAuthAppTitle(),
+    body: strings.mfaAuthAppDesc(),
     icon: "cellphone-key",
     recommended: true
   },
   {
     id: "sms",
-    title: "Set up using SMS",
-    body: "Notesnook will send you an SMS with a 2FA code when prompted",
+    title: strings.mfaSmsTitle(),
+    body: strings.mfaSmsDesc(),
     icon: "message-plus-outline"
   },
   {
     id: "email",
-    title: "Set up using Email",
-    body: "Notesnook will send you a 2FA code on your email when prompted",
+    title: strings.mfaEmailTitle(),
+    body: strings.mfaEmailDesc(),
     icon: "email-outline"
   }
 ];
@@ -105,18 +106,18 @@ export const MFAMethodsPickerStep = ({ recovery, onSuccess }: MFAStepProps) => {
   return (
     <>
       <DialogHeader
-        title="Two-factor authentication"
-        paragraph="Protect your notes by enabling 2 factor authentication"
+        title={strings.twoFactorAuth()}
+        paragraph={strings.twoFactorAuthDesc()}
         padding={12}
       />
       <Seperator />
       {getMethods().map((item) => (
-        <PressableButton
+        <Pressable
           key={item.title}
           onPress={() => {
             onSuccess && onSuccess(item);
           }}
-          customStyle={{
+          style={{
             paddingHorizontal: 12,
             paddingVertical: 12,
             marginTop: 0,
@@ -128,8 +129,8 @@ export const MFAMethodsPickerStep = ({ recovery, onSuccess }: MFAStepProps) => {
         >
           {item.icon && (
             <IconButton
-              type="grayBg"
-              customStyle={{
+              type="secondary"
+              style={{
                 width: 50,
                 height: 50,
                 marginRight: 10
@@ -149,7 +150,7 @@ export const MFAMethodsPickerStep = ({ recovery, onSuccess }: MFAStepProps) => {
             <Heading size={SIZE.md}>{item.title}</Heading>
             <Paragraph size={SIZE.sm}>{item.body}</Paragraph>
           </View>
-        </PressableButton>
+        </Pressable>
       ))}
     </>
   );
@@ -198,18 +199,18 @@ export const MFASetup = ({
       if (!method) return;
       setEnabling(true);
       if (recovery) {
-        await db.mfa?.enableFallback(method.id, code.current);
+        await db.mfa.enableFallback(method.id, code.current);
       } else {
-        await db.mfa?.enable(method.id, code.current);
+        await db.mfa.enable(method.id, code.current);
       }
 
-      const user = await db.user?.fetchUser();
+      const user = await db.user.fetchUser();
       useUserStore.getState().setUser(user);
       onSuccess && onSuccess(method);
       setEnabling(false);
     } catch (e) {
       const error = e as Error;
-      ToastEvent.error(error, "Error submitting 2fa code");
+      ToastManager.error(error, "Error submitting 2fa code");
       setEnabling(false);
     }
   };
@@ -225,8 +226,8 @@ export const MFASetup = ({
         );
       }
 
-      ToastEvent.show({
-        heading: "Code copied!",
+      ToastManager.show({
+        heading: strings.codesCopied(),
         type: "success",
         context: "local"
       });
@@ -234,12 +235,11 @@ export const MFASetup = ({
     }
 
     try {
-      if (seconds)
-        throw new Error("Please wait a few seconds before resending code");
+      if (seconds) throw new Error(strings.resendCodeWait());
       if (method.id === "sms" && !phoneNumber.current)
-        throw new Error("Phone number not entered");
+        throw new Error(strings.phoneNumberNotEntered());
       setSending(true);
-      await db.mfa?.setup(method?.id, phoneNumber.current);
+      await db.mfa.setup(method?.id, phoneNumber.current);
 
       if (method.id === "sms") {
         setId(method.id + phoneNumber.current);
@@ -250,15 +250,15 @@ export const MFASetup = ({
         method.id === "sms" ? method.id + phoneNumber.current : method.id
       );
       setSending(false);
-      ToastEvent.show({
-        heading: `2FA code sent via ${method.id}.`,
+      ToastManager.show({
+        heading: strings["2faCodeSentVia"](method.id),
         type: "success",
         context: "local"
       });
     } catch (e) {
       setSending(false);
       const error = e as Error;
-      ToastEvent.error(error, "Error sending 2FA code");
+      ToastManager.error(error, strings.errorSend2fa());
     }
   };
 
@@ -291,7 +291,9 @@ export const MFASetup = ({
                 height: 50
               }}
             />
-            <Paragraph>Getting information.. please wait</Paragraph>
+            <Paragraph>
+              {strings.gettingInformation()}... {strings.pleaseWait()}
+            </Paragraph>
           </View>
         ) : (
           <>
@@ -309,15 +311,23 @@ export const MFASetup = ({
                 phoneNumber.current = value;
               }}
               placeholder={
-                method?.id === "email" ? "Enter email address" : "+1234567890"
+                method?.id === "email"
+                  ? strings.enterEmailAddress()
+                  : "+1234567890"
               }
               onSubmit={() => {
                 onSendCode();
               }}
               onErrorCheck={(e) => setError(e)}
-              validationType="phonenumber"
-              keyboardType="phone-pad"
-              errorMessage="Please enter a valid phone number with country code"
+              validationType={method?.id === "email" ? "email" : "phonenumber"}
+              keyboardType={
+                method.id == "email" ? "email-address" : "phone-pad"
+              }
+              errorMessage={
+                method?.id === "email"
+                  ? strings.enterValidEmail()
+                  : strings.enterValidPhone()
+              }
               buttons={
                 error ? null : (
                   <Button
@@ -327,11 +337,11 @@ export const MFASetup = ({
                       sending
                         ? null
                         : method.id === "app"
-                        ? "Copy"
+                        ? strings.copy()
                         : `${
                             seconds
-                              ? `Resend code in (${seconds})`
-                              : "Send code"
+                              ? strings.resendCode(seconds as number)
+                              : strings.sendCode()
                           }`
                     }
                   />
@@ -339,7 +349,7 @@ export const MFASetup = ({
               }
             />
 
-            <Heading size={SIZE.md}>Enter the 6-digit code</Heading>
+            <Heading size={SIZE.md}>{strings.enterSixDigitCode()}</Heading>
             <Paragraph>{codeHelpText[method?.id]}</Paragraph>
             <Seperator />
             <Input
@@ -364,7 +374,7 @@ export const MFASetup = ({
             />
             <Seperator />
             <Button
-              title={enabling ? null : "Next"}
+              title={enabling ? null : strings.next()}
               type="accent"
               width={250}
               onPress={onNext}
@@ -376,8 +386,8 @@ export const MFASetup = ({
             />
 
             <Button
-              title="Select a different 2FA method"
-              type="gray"
+              title={strings.change2faMethod()}
+              type="plain"
               height={25}
               onPress={() => {
                 setStep &&
@@ -408,12 +418,12 @@ export const MFARecoveryCodes = ({
   useEffect(() => {
     (async () => {
       try {
-        const codes = await db.mfa?.codes();
+        const codes = await db.mfa.codes();
         if (codes) setCodes(codes);
         setLoading(false);
       } catch (e) {
         const error = e as Error;
-        ToastEvent.error(error, "Error getting codes", "local");
+        ToastManager.error(error, strings.errorGettingCodes(), "local");
         setLoading(false);
       }
     })();
@@ -423,14 +433,8 @@ export const MFARecoveryCodes = ({
     <View>
       <DialogHeader
         centered={true}
-        title="Save your recovery codes"
-        paragraph={`If you lose access to your ${
-          method?.id === "email"
-            ? "email"
-            : method?.id === "sms"
-            ? "phone"
-            : "auth app"
-        }, you can login to Notesnook using your recovery codes. Each code can only be used once.`}
+        title={strings.saveRecoveryCodes()}
+        paragraph={strings.saveRecoveryCodesDesc()}
         padding={12}
       />
       <Seperator />
@@ -450,7 +454,9 @@ export const MFARecoveryCodes = ({
               height: 50
             }}
           />
-          <Paragraph>Getting recovery codes.. please wait</Paragraph>
+          <Paragraph>
+            {strings.gettingRecoveryCodes()}... {strings.pleaseWait()}
+          </Paragraph>
         </View>
       ) : (
         <>
@@ -483,13 +489,13 @@ export const MFARecoveryCodes = ({
             }}
           >
             <Button
-              title="Copy codes"
+              title={strings.copyCodes()}
               fontSize={SIZE.md}
               onPress={() => {
                 const codeString = codes.join("\n");
                 Clipboard.setString(codeString);
-                ToastEvent.show({
-                  heading: "Recovery codes copied!",
+                ToastManager.show({
+                  heading: strings.codesCopied(),
                   type: "success",
                   context: "global"
                 });
@@ -500,7 +506,7 @@ export const MFARecoveryCodes = ({
             />
 
             <Button
-              title="Save to file"
+              title={strings.saveToFile()}
               fontSize={SIZE.md}
               onPress={async () => {
                 try {
@@ -519,7 +525,7 @@ export const MFARecoveryCodes = ({
                     if (!file) return;
                     path = file.uri;
                   } else {
-                    path = await Storage.checkAndCreateDir("/");
+                    path = await filesystem.checkAndCreateDir("/");
                     await RNFetchBlob.fs.writeFile(
                       path + fileName,
                       codeString,
@@ -528,8 +534,8 @@ export const MFARecoveryCodes = ({
                     path = path + fileName;
                   }
 
-                  ToastEvent.show({
-                    heading: "Recovery codes saved to text file",
+                  ToastManager.show({
+                    heading: strings.codesSaved(),
                     type: "success",
                     context: "local"
                   });
@@ -542,7 +548,7 @@ export const MFARecoveryCodes = ({
           </View>
 
           <Button
-            title={isSetup ? "Next" : "Done"}
+            title={isSetup ? strings.next() : strings.done()}
             type="accent"
             width={250}
             onPress={() => {
@@ -593,16 +599,16 @@ const MFASuccess = ({ recovery }: MFAStepProps) => {
         centered={true}
         title={
           recovery
-            ? "Fallback method for 2FA enabled"
-            : "Two-factor authentication enabled!"
+            ? strings.fallbackMethodEnabled()
+            : strings.twoFactorAuthEnabled()
         }
-        paragraph="Your account is now 100% secure against unauthorized logins."
+        paragraph={strings.accountIsSecure()}
         padding={12}
       />
       <Seperator />
 
       <Button
-        title="Done"
+        title={strings.done()}
         type="accent"
         width={250}
         onPress={() => {
@@ -616,8 +622,8 @@ const MFASuccess = ({ recovery }: MFAStepProps) => {
 
       {!recovery ? (
         <Button
-          title="Setup secondary 2FA method"
-          type="gray"
+          title={strings.secondary2faMethod()}
+          type="plain"
           height={25}
           onPress={() => {
             MFASheet.present(true);

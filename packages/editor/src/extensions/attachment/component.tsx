@@ -18,17 +18,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Box, Text } from "@theme-ui/components";
-import { FileAttachment } from "./types";
+import { FileAttachment } from "./types.js";
 import { useRef, useState } from "react";
 import { Icon } from "@notesnook/ui";
-import { Icons } from "../../toolbar/icons";
-import { SelectionBasedReactNodeViewProps } from "../react";
-import { ToolbarGroup } from "../../toolbar/components/toolbar-group";
-import { DesktopOnly } from "../../components/responsive";
+import { Icons } from "../../toolbar/icons.js";
+import { ReactNodeViewProps } from "../react/index.js";
+import { ToolbarGroup } from "../../toolbar/components/toolbar-group.js";
+import { DesktopOnly } from "../../components/responsive/index.js";
 
-export function AttachmentComponent(
-  props: SelectionBasedReactNodeViewProps<FileAttachment>
-) {
+export function AttachmentComponent(props: ReactNodeViewProps<FileAttachment>) {
   const { editor, node, selected } = props;
   const { filename, size, progress } = node.attrs;
   const elementRef = useRef<HTMLSpanElement>();
@@ -90,6 +88,7 @@ export function AttachmentComponent(
         {selected && !isDragging && (
           <ToolbarGroup
             editor={editor}
+            groupId="attachmentTools"
             tools={
               editor.isEditable
                 ? [

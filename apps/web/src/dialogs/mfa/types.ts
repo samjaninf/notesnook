@@ -17,10 +17,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Perform } from "../../common/dialog-controller";
+import { AuthenticatorType } from "@notesnook/core";
 import { Icon } from "../../components/icons";
-
-export type AuthenticatorType = "app" | "sms" | "email";
 
 export type Authenticator = {
   type: AuthenticatorType;
@@ -32,7 +30,7 @@ export type Authenticator = {
 
 export type StepComponentProps<T extends OnNextFunction> = {
   onNext: T;
-  onClose?: Perform;
+  onClose?: (result: boolean) => void;
   onError?: (error: string) => void;
 };
 

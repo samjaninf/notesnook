@@ -17,16 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { EVENTS } from "@notesnook/core/dist/common";
+import { EVENTS } from "@notesnook/core";
 import { Text } from "@theme-ui/components";
 import { useCallback, useEffect, useState } from "react";
 import { createBackup } from "../common";
 import { db } from "../common/db";
-import { Perform } from "../common/dialog-controller";
 import { TaskManager } from "../common/task-manager";
-
 import Dialog from "../components/dialog";
 import { ErrorText } from "../components/error-text";
+import { BaseDialogProps, DialogManager } from "../common/dialog-manager";
+import { strings } from "@notesnook/intl";
 
 type MigrationProgressEvent = {
   collection: string;
@@ -34,11 +34,10 @@ type MigrationProgressEvent = {
   current: number;
 };
 
-export type MigrationDialogProps = {
-  onClose: Perform;
-};
-
-export default function MigrationDialog(props: MigrationDialogProps) {
+export type MigrationDialogProps = BaseDialogProps<boolean>;
+export const MigrationDialog = DialogManager.register(function MigrationDialog(
+  props: MigrationDialogProps
+) {
   const [error, setError] = useState<Error>();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -49,25 +48,26 @@ export default function MigrationDialog(props: MigrationDialogProps) {
 
     await TaskManager.startTask({
       type: "modal",
-      title: `Applying changes...`,
-      subtitle: "This might take while.",
+      title: strings.applyingChanges(),
+      subtitle: strings.thisMayTakeAWhile(),
       action: async (task) => {
         db.eventManager.subscribe(
           EVENTS.migrationProgress,
           ({ collection, total, current }: MigrationProgressEvent) => {
             task({
-              text: `Processing ${collection}...`,
+              text: strings.processingCollection(collection),
               current,
               total
             });
           }
         );
-        task({ text: `Processing...` });
+        task({ text: strings.processing() });
         try {
-          await db.migrations?.migrate();
+          await db.migrations.migrate();
 
           props.onClose(true);
         } catch (e) {
+          console.error(e);
           if (e instanceof Error) setError(e);
         }
       }
@@ -86,15 +86,15 @@ export default function MigrationDialog(props: MigrationDialogProps) {
     return (
       <Dialog
         isOpen={true}
-        title={"There was an error"}
+        title={strings.migrationFailed()}
         description={""}
         positiveButton={{
-          text: "Try again",
+          text: strings.tryAgain(),
           onClick: startMigration
         }}
       >
         <ErrorText
-          error={error.stack}
+          error={error}
           as="p"
           sx={{
             borderRadius: "default",
@@ -103,9 +103,9 @@ export default function MigrationDialog(props: MigrationDialogProps) {
           }}
         />
         <Text as="p" variant={"subBody"} sx={{ mt: 2 }}>
-          If this continues to happen, please reach out to us via{" "}
-          <a href="https://discord.com/invite/zQBK97EE22">Discord</a> or email
-          us at{" "}
+          {strings.migrationErrorNotice()[0]}{" "}
+          <a href="https://discord.com/invite/zQBK97EE22">Discord</a>{" "}
+          {strings.migrationErrorNotice()[1]}{" "}
           <a href="mailto:support@streetwriters.co">support@streetwriters.co</a>
         </Text>
       </Dialog>
@@ -118,18 +118,16 @@ export default function MigrationDialog(props: MigrationDialogProps) {
     <Dialog
       width={500}
       isOpen={true}
-      title={"Save a backup of your notes"}
+      title={strings.migrationSaveBackup()}
       description={""}
       positiveButton={{
-        text: "Save & continue",
+        text: strings.saveAndContinue(),
         onClick: startMigration
       }}
     >
       <Text as="p" variant={"body"}>
-        {
-          "Thank you for updating Notesnook! We'll be applying some minor changes for a better note taking experience."
-        }
+        {strings.migrationSaveBackupDesc()}
       </Text>
     </Dialog>
   );
-}
+});

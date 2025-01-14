@@ -23,12 +23,21 @@ import type {
   TaskSchedulerEvent
 } from "./task-scheduler.worker";
 import { wrap, Remote } from "comlink";
+import { showToast } from "./toast";
+import { logger } from "./logger";
+import { validate } from "cronosjs";
+import { strings } from "@notesnook/intl";
 
 let worker: globalThis.Worker | undefined;
 let scheduler: Remote<TaskSchedulerType> | undefined;
 
 export class TaskScheduler {
   static async register(id: string, time: string, action: () => void) {
+    if (!validate(time)) {
+      logger.error(`Invalid cron expression: ${time}`);
+      return;
+    }
+
     init();
 
     worker?.addEventListener("message", function handler(ev) {
@@ -45,7 +54,16 @@ export class TaskScheduler {
           break;
       }
     });
-    await scheduler?.registerTask(id, time);
+    try {
+      await scheduler?.registerTask(id, time);
+    } catch (e) {
+      showToast(
+        "error",
+        `${strings.failedToRegisterTask()}: ${
+          (e as Error).message
+        } (cron: ${time})`
+      );
+    }
   }
 
   static async stop(id: string) {
