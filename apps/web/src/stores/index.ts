@@ -21,11 +21,11 @@ import { StateCreator } from "zustand";
 
 type NNStoreCreator<T> = StateCreator<
   T,
-  [["zustand/subscribeWithSelector", never], ["zustand/immer", never]]
+  [["zustand/subscribeWithSelector", never], ["zustand/mutative", never]]
 >;
 
-type GetState<T> = Parameters<NNStoreCreator<T>>[1];
-type SetState<T> = Parameters<NNStoreCreator<T>>[0];
+export type GetState<T> = Parameters<NNStoreCreator<T>>[1];
+export type SetState<T> = Parameters<NNStoreCreator<T>>[0];
 
 export interface IStore<T extends object> {
   new (set: SetState<T>, get: GetState<T>): T;

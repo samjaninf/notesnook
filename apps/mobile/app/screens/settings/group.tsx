@@ -23,6 +23,7 @@ import { View } from "react-native";
 import { KeyboardAwareFlatList } from "react-native-keyboard-aware-scroll-view";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import DelayLayout from "../../components/delay-layout";
+import { Header } from "../../components/header";
 import { useNavigationFocus } from "../../hooks/use-navigation-focus";
 import useNavigationStore from "../../stores/use-navigation-store";
 import { tabBarRef } from "../../utils/global-refs";
@@ -42,13 +43,7 @@ const Group = ({
   useNavigationFocus(navigation, {
     onFocus: () => {
       tabBarRef.current?.lock();
-      useNavigationStore.getState().update(
-        {
-          name: "SettingsGroup",
-          title: route.params.name as string
-        },
-        true
-      );
+      useNavigationStore.getState().setFocusedRouteId("Settings");
       return false;
     }
   });
@@ -62,25 +57,35 @@ const Group = ({
   );
 
   return (
-    <DelayLayout type="settings" delay={1}>
-      <View
-        style={{
-          flex: 1
-        }}
-      >
-        {route.params.sections ? (
-          <AnimatedKeyboardAvoidingFlatList
-            entering={FadeInDown}
-            data={route.params.sections}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            enableOnAndroid
-            enableAutomaticScroll
-          />
-        ) : null}
-        {route.params.component ? components[route.params.component] : null}
-      </View>
-    </DelayLayout>
+    <>
+      {route.params.hideHeader ? null : (
+        <Header
+          renderedInRoute="Settings"
+          title={route.params.name as string}
+          canGoBack={true}
+          id="Settings"
+        />
+      )}
+      <DelayLayout type="settings" delay={1}>
+        <View
+          style={{
+            flex: 1
+          }}
+        >
+          {route.params.component ? components[route.params.component] : null}
+          {route.params.sections ? (
+            <AnimatedKeyboardAvoidingFlatList
+              entering={FadeInDown}
+              data={route.params.sections}
+              keyExtractor={keyExtractor}
+              renderItem={renderItem}
+              enableOnAndroid
+              enableAutomaticScroll
+            />
+          ) : null}
+        </View>
+      </DelayLayout>
+    </>
   );
 };
 

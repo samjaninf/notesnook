@@ -17,121 +17,126 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Perform } from "../common/dialog-controller";
 import Dialog from "../components/dialog";
 import { Button, Flex, Text } from "@theme-ui/components";
 import { db } from "../common/db";
-import { Reminder } from "@notesnook/core/dist/collections/reminders";
+import { Reminder } from "@notesnook/core";
 import IconTag from "../components/icon-tag";
 import { Clock, Refresh } from "../components/icons";
 import Note from "../components/note";
-import { getFormattedReminderTime } from "@notesnook/common";
+import { getFormattedReminderTime, usePromise } from "@notesnook/common";
+import { BaseDialogProps, DialogManager } from "../common/dialog-manager";
+import { strings } from "@notesnook/intl";
 
-export type ReminderPreviewDialogProps = {
-  onClose: Perform;
+export type ReminderPreviewDialogProps = BaseDialogProps<false> & {
   reminder: Reminder;
 };
 
 const RECURRING_MODE_MAP = {
   week: "Weekly",
   day: "Daily",
-  month: "Monthly"
+  month: "Monthly",
+  year: "Yearly"
 } as const;
 
 const SNOOZE_TIMES = [
   {
     id: "5-min",
-    title: "5 minutes",
+    title: strings.minutes(5),
     interval: 60 * 5 * 1000
   },
   {
     id: "10-min",
-    title: "10 minutes",
+    title: strings.minutes(10),
     interval: 60 * 10 * 1000
   },
-  { id: "15-min", title: "15 minutes", interval: 60 * 15 * 1000 },
-  { id: "1-hour", title: "1 hour", interval: 60 * 60 * 1000 }
+  { id: "15-min", title: strings.minutes(15), interval: 60 * 15 * 1000 },
+  { id: "1-hour", title: strings.hours(1), interval: 60 * 60 * 1000 }
 ];
 
-export default function ReminderPreviewDialog(
-  props: ReminderPreviewDialogProps
-) {
-  const { reminder } = props;
-  const referencedNotes = db.relations?.to(
-    { id: reminder.id, type: "reminder" },
-    "note"
-  );
+export const ReminderPreviewDialog = DialogManager.register(
+  function ReminderPreviewDialog(props: ReminderPreviewDialogProps) {
+    const { reminder } = props;
+    const referencedNotes = usePromise(
+      () =>
+        db.relations
+          .to({ id: reminder.id, type: "reminder" }, "note")
+          .resolve(),
+      [reminder.id]
+    );
 
-  return (
-    <Dialog
-      isOpen={true}
-      title={reminder.title}
-      description={reminder.description}
-      onClose={() => props.onClose(false)}
-      negativeButton={{
-        text: "Close",
-        onClick: () => props.onClose(false)
-      }}
-    >
-      <Flex
-        sx={{
-          alignItems: "center",
-          mb: 2
+    return (
+      <Dialog
+        isOpen={true}
+        title={reminder.title}
+        description={reminder.description}
+        onClose={() => props.onClose(false)}
+        negativeButton={{
+          text: strings.close(),
+          onClick: () => props.onClose(false)
         }}
       >
-        {reminder.mode === "repeat" && reminder.recurringMode && (
-          <IconTag
-            icon={Refresh}
-            text={RECURRING_MODE_MAP[reminder.recurringMode]}
-          />
-        )}
-        <IconTag icon={Clock} text={getFormattedReminderTime(reminder)} />
-      </Flex>
-
-      <Text variant="body">Remind me in:</Text>
-      <Flex
-        sx={{
-          alignItems: "center",
-          my: 1,
-          gap: 1
-        }}
-      >
-        {SNOOZE_TIMES.map((time) => (
-          <Button
-            key={time.id}
-            variant="secondary"
-            onClick={() => {
-              db.reminders?.add({
-                id: reminder.id,
-                snoozeUntil: Date.now() + time.interval
-              });
-              props.onClose(false);
-            }}
-            sx={{
-              borderRadius: 100,
-              py: 1,
-              px: 2,
-              flexShrink: 0
-            }}
-          >
-            {time.title}
-          </Button>
-        ))}
-      </Flex>
-      {referencedNotes && referencedNotes.length > 0 && (
-        <>
-          <Text variant="body">References:</Text>
-          {referencedNotes.map((item, index) => (
-            <Note
-              key={item.id}
-              item={item}
-              date={item.dateCreated}
-              tags={[]}
-              compact
+        <Flex
+          sx={{
+            alignItems: "center",
+            mb: 2
+          }}
+        >
+          {reminder.mode === "repeat" && reminder.recurringMode && (
+            <IconTag
+              icon={Refresh}
+              text={RECURRING_MODE_MAP[reminder.recurringMode]}
             />
+          )}
+          <IconTag icon={Clock} text={getFormattedReminderTime(reminder)} />
+        </Flex>
+
+        <Text variant="body">{strings.remindMeIn()}:</Text>
+        <Flex
+          sx={{
+            alignItems: "center",
+            my: 1,
+            gap: 1
+          }}
+        >
+          {SNOOZE_TIMES.map((time) => (
+            <Button
+              key={time.id}
+              variant="secondary"
+              onClick={() => {
+                db.reminders.add({
+                  id: reminder.id,
+                  snoozeUntil: Date.now() + time.interval
+                });
+                props.onClose(false);
+              }}
+              sx={{
+                borderRadius: 100,
+                py: 1,
+                px: 2,
+                flexShrink: 0
+              }}
+            >
+              {time.title}
+            </Button>
           ))}
-        </>
-      )}
-    </Dialog>
-  );
-}
+        </Flex>
+        {referencedNotes &&
+          referencedNotes.status === "fulfilled" &&
+          referencedNotes.value.length > 0 && (
+            <>
+              <Text variant="body">{strings.references()}:</Text>
+              {referencedNotes.value.map((item, index) => (
+                <Note
+                  key={item.id}
+                  item={item}
+                  date={item.dateCreated}
+                  compact
+                />
+              ))}
+            </>
+          )}
+      </Dialog>
+    );
+  }
+);

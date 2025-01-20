@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import EventManager from "@notesnook/core/dist/utils/event-manager";
+import { EventHandler, EventManager } from "@notesnook/core";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { RefObject } from "react";
 import { ActionSheetRef } from "react-native-actions-sheet";
@@ -30,6 +30,7 @@ import {
   eOpenVaultDialog,
   eShowToast
 } from "../utils/events";
+import { strings } from "@notesnook/intl";
 
 type Vault = {
   item: unknown;
@@ -60,20 +61,22 @@ const eventManager = new EventManager();
 
 export const eSubscribeEvent = <T = unknown>(
   eventName: string,
-  action?: (data: T) => void
+  action: EventHandler
 ) => {
+  if (!action) return;
   return eventManager.subscribe(eventName, action);
 };
 
 export const eUnSubscribeEvent = <T = unknown>(
   eventName: string,
-  action?: (data: T) => void
+  action: EventHandler
 ) => {
+  if (!action) return;
   eventManager.unsubscribe(eventName, action);
 };
 
-export const eSendEvent = (eventName: string, data?: unknown) => {
-  eventManager.publish(eventName, data);
+export const eSendEvent = (eventName: string, ...args: any[]) => {
+  eventManager.publish(eventName, ...args);
 };
 
 export const openVault = (data: Partial<Vault>) => {
@@ -116,6 +119,7 @@ export type PresentSheetOptions = {
   learnMorePress: () => void;
   enableGesturesInScrollView?: boolean;
   noBottomPadding?: boolean;
+  keyboardHandlerDisabled?: boolean;
 };
 
 export function presentSheet(data: Partial<PresentSheetOptions>) {
@@ -126,58 +130,58 @@ export function hideSheet() {
   eSendEvent(eCloseSheet);
 }
 
-export type ShowToastEvent = {
+export type ToastOptions = {
   heading?: string;
   message?: string;
-  context?: "global" | "local";
-  type?: "error" | "success";
+  context?: any;
+  type?: "error" | "success" | "info";
   duration?: number;
   func?: () => void;
   actionText?: string;
+  icon?: string;
 };
 
-export const ToastEvent = {
+export const ToastManager = {
   show: ({
     heading,
     message,
     type = "error",
     context = "global",
     func,
-    actionText
-  }: ShowToastEvent) => {
+    actionText,
+    icon,
+    duration = 3000
+  }: ToastOptions) => {
     if (Config.isTesting) return;
     eSendEvent(eShowToast, {
-      heading: heading,
-      message: message,
-      type: type,
-      context: context,
-      duration: 3000,
-      func: func,
-      actionText: actionText
+      heading,
+      message,
+      type,
+      context,
+      func,
+      actionText,
+      icon,
+      duration
     });
   },
   hide: () => eSendEvent(eHideToast),
-  error: (e: Error, title?: string, context?: "global" | "local") => {
-    ToastEvent.show({
+  error: (e: Error, title?: string, context?: any, duration = 6000) => {
+    ToastManager.show({
       heading: title,
       message: e?.message || "",
       type: "error",
       context: context || "global",
       actionText: "Copy logs",
-      duration: 6000,
+      duration: duration,
       func: () => {
         Clipboard.setString(e?.stack || "");
-        ToastEvent.show({
-          heading: "Logs copied!",
+        ToastManager.show({
+          heading: strings.logsCopied(),
           type: "success",
           context: "global",
-          duration: 5000
+          duration: duration
         });
       }
     });
   }
 };
-
-/*
-
-*/

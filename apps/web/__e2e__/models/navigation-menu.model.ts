@@ -34,6 +34,7 @@ export class NavigationMenuModel {
   async findItem(title: string) {
     for await (const item of this.iterateList()) {
       const menuItem = new NavigationItemModel(item);
+      if (!(await menuItem.locator.isVisible())) continue;
       if ((await menuItem.getTitle()) === title) return menuItem;
     }
   }
@@ -67,7 +68,7 @@ class NavigationItemModel {
   private readonly shortcut: Locator;
   private readonly menu: ContextMenuModel;
   private readonly page: Page;
-  constructor(private readonly locator: Locator) {
+  constructor(readonly locator: Locator) {
     this.page = locator.page();
     this.shortcut = locator.locator(getTestId("shortcut"));
     this.menu = new ContextMenuModel(this.page);
@@ -87,8 +88,13 @@ class NavigationItemModel {
 
   async renameColor(alias: string) {
     await this.menu.open(this.locator);
-    await this.menu.clickOnItem("rename");
+    await this.menu.clickOnItem("rename-color");
     await fillItemDialog(this.page, { title: alias });
+  }
+
+  async removeColor() {
+    await this.menu.open(this.locator);
+    await this.menu.clickOnItem("remove-color");
   }
 
   async removeShortcut() {

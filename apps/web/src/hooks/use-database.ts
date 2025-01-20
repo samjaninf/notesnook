@@ -17,32 +17,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { useEffect, useState } from "react";
 import { initializeDatabase } from "../common/db";
-import "allotment/dist/style.css";
-import "../utils/analytics";
-import "../app.css";
 
-// if (import.meta.env.PROD) {
-//   console.log = () => {};
-// }
-
-const memory = {
-  isDatabaseLoaded: false
-};
-export default function useDatabase(persistence: "db" | "memory" = "db") {
-  const [isAppLoaded, setIsAppLoaded] = useState(memory.isDatabaseLoaded);
-
-  useEffect(() => {
-    loadDatabase(persistence).then(() => setIsAppLoaded(true));
-  }, [persistence]);
-
-  return [isAppLoaded];
-}
-
-export async function loadDatabase(persistence: "db" | "memory" = "db") {
-  if (memory.isDatabaseLoaded) return;
-
-  await initializeDatabase(persistence);
-  memory.isDatabaseLoaded = true;
+let isDatabaseLoaded: false | Promise<any> = false;
+export function loadDatabase(persistence: "db" | "memory" = "db") {
+  isDatabaseLoaded = isDatabaseLoaded || initializeDatabase(persistence);
+  return isDatabaseLoaded;
 }

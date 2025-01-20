@@ -25,7 +25,8 @@ export const DesktopIntegration = z.object({
   autoStart: z.boolean().optional(),
   startMinimized: z.boolean().optional(),
   minimizeToSystemTray: z.boolean().optional(),
-  closeToSystemTray: z.boolean().optional()
+  closeToSystemTray: z.boolean().optional(),
+  nativeTitlebar: z.boolean().optional()
 });
 
 export type DesktopIntegration = z.infer<typeof DesktopIntegration>;
@@ -35,13 +36,20 @@ export const config = {
     autoStart: false,
     startMinimized: false,
     minimizeToSystemTray: false,
-    closeToSystemTray: false
+    closeToSystemTray: false,
+    nativeTitlebar: false
   },
   privacyMode: false,
   isSpellCheckerEnabled: true,
   zoomFactor: 1,
   theme: nativeTheme.themeSource,
-  automaticUpdates: true
+  automaticUpdates: true,
+  proxyRules: "",
+  customDns: true,
+
+  backgroundColor: nativeTheme.themeSource === "dark" ? "#0f0f0f" : "#ffffff",
+  windowControlsIconColor:
+    nativeTheme.themeSource === "dark" ? "#ffffff" : "#000000"
 };
 
 type ConfigKey = keyof typeof config;

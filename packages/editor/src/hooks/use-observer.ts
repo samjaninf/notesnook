@@ -18,7 +18,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { debounce } from "../utils/debounce";
 
 type ObserverType = {
   threshold: number;
@@ -52,12 +51,9 @@ export function useObserver<T extends Element = Element>({
       threshold: threshold
     };
 
-    observer.current = new IntersectionObserver(
-      debounce((entries) => {
-        updateInView(entries[0].isIntersecting);
-      }, 500) as IntersectionObserverCallback,
-      options
-    );
+    observer.current = new IntersectionObserver((entries) => {
+      updateInView(entries[0].isIntersecting);
+    }, options);
   });
 
   useEffect(() => {

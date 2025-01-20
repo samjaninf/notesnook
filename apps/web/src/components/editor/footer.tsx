@@ -17,12 +17,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Flex, Text } from "@theme-ui/components";
-import { useMemo } from "react";
-import { useStore } from "../../stores/editor-store";
+import { Button, Flex, Text } from "@theme-ui/components";
+import { SaveState, useEditorStore } from "../../stores/editor-store";
 import { Loading, Saved, NotSaved } from "../icons";
-import { useNoteStatistics } from "./context";
+import { useEditorConfig, useNoteStatistics } from "./manager";
 import { getFormattedDate } from "@notesnook/common";
+import { MAX_AUTO_SAVEABLE_WORDS } from "./types";
+import { strings } from "@notesnook/intl";
+import { EDITOR_ZOOM } from "./common";
 
 const SAVE_STATE_ICON_MAP = {
   "-1": NotSaved,
@@ -32,47 +34,106 @@ const SAVE_STATE_ICON_MAP = {
 
 function EditorFooter() {
   const { words } = useNoteStatistics();
-  const dateEdited = useStore((store) => store.session.dateEdited);
-  const id = useStore((store) => store.session.id);
-  const saveState = useStore(
-    (store) => store.session.saveState
-  ) as keyof typeof SAVE_STATE_ICON_MAP;
-  const SaveStateIcon = useMemo(
-    () => SAVE_STATE_ICON_MAP[saveState],
-    [saveState]
-  );
+  const session = useEditorStore((store) => store.getActiveSession());
+  const { editorConfig, setEditorConfig } = useEditorConfig();
+  if (!session) return null;
 
-  if (!id) return null;
+  const saveState =
+    session.type === "default" ? session.saveState : SaveState.NotSaved;
+  const dateEdited = "note" in session ? session.note.dateEdited : 0;
+  const SaveStateIcon = SAVE_STATE_ICON_MAP[saveState];
+
   return (
-    <Flex sx={{ alignItems: "center" }}>
+    <Flex sx={{ alignItems: "center", justifyContent: "center", gap: 2 }}>
+      <Flex
+        sx={{
+          alignItems: "center",
+          justifyContent: "center",
+          flex: 1
+        }}
+      >
+        <Button
+          variant="icon"
+          onClick={() =>
+            setEditorConfig({
+              zoom: Math.max(
+                EDITOR_ZOOM.MIN,
+                editorConfig.zoom - EDITOR_ZOOM.STEP
+              )
+            })
+          }
+          disabled={editorConfig.zoom <= EDITOR_ZOOM.MIN}
+          sx={{ py: 0, height: "100%" }}
+        >
+          <b>-</b>
+        </Button>
+        <Text
+          className="selectable"
+          variant="subBody"
+          sx={{ color: "paragraph" }}
+        >
+          {editorConfig.zoom}%
+        </Text>
+        <Button
+          variant="icon"
+          onClick={() =>
+            setEditorConfig({
+              zoom: Math.min(
+                EDITOR_ZOOM.MAX,
+                editorConfig.zoom + EDITOR_ZOOM.STEP
+              )
+            })
+          }
+          disabled={editorConfig.zoom >= EDITOR_ZOOM.MAX}
+          sx={{ py: 0, height: "100%" }}
+        >
+          <b>+</b>
+        </Button>
+      </Flex>
+      {words.total > MAX_AUTO_SAVEABLE_WORDS ? (
+        <Text
+          className="selectable"
+          variant="subBody"
+          sx={{ color: "paragraph" }}
+        >
+          {strings.autoSaveOff()}
+        </Text>
+      ) : null}
       <Text
         className="selectable"
         data-test-id="editor-word-count"
         variant="subBody"
-        mr={2}
         sx={{ color: "paragraph" }}
       >
-        {words.total + " words"}
-        {words.selected ? ` (${words.selected} selected)` : ""}
+        {strings.totalWords(words.total)}
+        {words.selected ? ` (${strings.selectedWords(words.selected)})` : ""}
       </Text>
-      <Text
-        className="selectable"
-        variant="subBody"
-        mr={2}
-        sx={{ color: "paragraph" }}
-        data-test-id="editor-date-edited"
-        title={dateEdited?.toString()}
-      >
-        {getFormattedDate(dateEdited || Date.now())}
-      </Text>
+      {dateEdited > 0 ? (
+        <Text
+          className="selectable"
+          variant="subBody"
+          sx={{ color: "paragraph" }}
+          data-test-id="editor-date-edited"
+          title={dateEdited.toString()}
+        >
+          {getFormattedDate(dateEdited)}
+        </Text>
+      ) : null}
       {SaveStateIcon && (
         <SaveStateIcon
+          data-test-id={`editor-save-state-${
+            saveState === SaveState.Saved
+              ? "saved"
+              : saveState === SaveState.NotSaved
+              ? "notsaved"
+              : "loading"
+          }`}
           size={13}
           color={
-            saveState === 1
+            saveState === SaveState.Saved
               ? "accent"
-              : saveState === "-1"
-              ? "red"
+              : saveState === SaveState.NotSaved
+              ? "icon-error"
               : "paragraph"
           }
         />

@@ -24,9 +24,10 @@ import { TextInput } from "react-native";
 import Paragraph from "../../components/ui/typography/paragraph";
 import { useThemeColors } from "@notesnook/theme";
 import { SIZE } from "../../utils/size";
+import { strings } from "@notesnook/intl";
 
 export const TitleFormat = () => {
-  const [titleFormat] = useState(db.settings?.getTitleFormat());
+  const [titleFormat] = useState(db.settings.getTitleFormat());
   const inputRef = useRef<TextInput>();
   const { colors } = useThemeColors();
 
@@ -34,10 +35,10 @@ export const TitleFormat = () => {
     <>
       <Input
         onSubmit={(e) => {
-          db.settings?.setTitleFormat(e.nativeEvent.text);
+          db.settings.setTitleFormat(e.nativeEvent.text);
         }}
         onChangeText={(text) => {
-          db.settings?.setTitleFormat(text);
+          db.settings.setTitleFormat(text);
         }}
         containerStyle={{ marginTop: 6 }}
         onLayout={() => {
@@ -53,14 +54,7 @@ export const TitleFormat = () => {
         color={colors.secondary.paragraph}
         size={SIZE.xs}
       >
-        Use the following key to format the title:{"\n"}
-        {"\n"}
-        $date$: Current date.{"\n"}
-        $time$: Current time.{"\n"}
-        $timestamp$: Full date and time without any spaces or other symbols.
-        (e.g 202305261253).{"\n"}
-        $count$: Number of notes + 1.{"\n"}
-        $headline$: Use starting line of the note as title.{"\n"}
+        {strings.titleFormattingGuide()}
       </Paragraph>
     </>
   );

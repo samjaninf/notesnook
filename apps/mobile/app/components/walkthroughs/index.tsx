@@ -29,6 +29,7 @@ import { Button } from "../ui/button";
 import Heading from "../ui/typography/heading";
 import Paragraph from "../ui/typography/paragraph";
 import walkthroughs, { TStep } from "./walkthroughs";
+import { strings } from "@notesnook/intl";
 export const Walkthrough = ({
   steps,
   canSkip = true
@@ -121,8 +122,8 @@ export const Walkthrough = ({
           onPress={async () => {
             eSendEvent(eCloseSheet);
           }}
-          type="gray"
-          title="Skip introduction"
+          type="plain"
+          title={strings.skipIntroduction()}
         />
       ) : null}
     </View>

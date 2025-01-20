@@ -18,10 +18,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Node, mergeAttributes } from "@tiptap/core";
-import { hasSameAttributes } from "../../utils/prosemirror";
-import { WebClipAttachment, getDataAttribute } from "../attachment";
-import { createSelectionBasedNodeView } from "../react";
-import { WebClipComponent } from "./component";
+import { hasSameAttributes } from "../../utils/prosemirror.js";
+import { WebClipAttachment, getDataAttribute } from "../attachment/index.js";
+import { createNodeView } from "../react/index.js";
+import { WebClipComponent } from "./component.js";
 
 export interface WebClipOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -92,7 +92,7 @@ export const WebClipNode = Node.create<WebClipOptions>({
   },
 
   addNodeView() {
-    return createSelectionBasedNodeView(WebClipComponent, {
+    return createNodeView(WebClipComponent, {
       shouldUpdate: (prev, next) => !hasSameAttributes(prev.attrs, next.attrs),
       forceEnableSelection: true
     });

@@ -31,6 +31,18 @@ mergedConfig.resolver = {
     "@notifee/react-native": path.join(__dirname, "../node_modules/@ammarahmed/notifee-react-native"),
   },
   resolveRequest: (context, moduleName, platform) => {
+    if (moduleName === "node:crypto") {
+      return {
+        type:"empty"
+      }
+    }
+
+    if (moduleName === "crypto") {
+      return {
+        type:"empty"
+      }
+    }
+
     if (moduleName ==='react') {
       // Resolve react package from mobile app's node_modules folder always.
       return {
@@ -38,8 +50,16 @@ mergedConfig.resolver = {
         type: 'sourceFile',
       };
     }
+
+    if (moduleName ==='kysely') {
+      // Resolve react package from mobile app's node_modules folder always.
+      return {
+        filePath: path.resolve(path.join(__dirname, '../node_modules', "kysely","dist", "cjs", "index.js")),
+        type: 'sourceFile',
+      };
+    }
     return context.resolveRequest(context, moduleName, platform);
-  }
+  },
 };
 
 module.exports = mergedConfig;

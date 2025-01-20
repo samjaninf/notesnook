@@ -50,14 +50,16 @@ test("create a note inside a notebook", async ({ page }) => {
   expect(note).toBeDefined();
 });
 
-test("create a note inside a topic", async ({ page }) => {
+test("create a note inside a subnotebook", async ({ page }) => {
   const app = new AppModel(page);
   await app.goto();
   const notebooks = await app.goToNotebooks();
   const notebook = await notebooks.createNotebook(NOTEBOOK);
-  const { topics } = (await notebook?.openNotebook()) || {};
-  const topic = await topics?.findItem({ title: NOTEBOOK.topics[0] });
-  const notes = await topic?.open();
+  const { subNotebooks } = (await notebook?.openNotebook()) || {};
+  const subNotebook = await subNotebooks?.createNotebook({
+    title: "Subnotebook 1"
+  });
+  const { notes } = (await subNotebook?.openNotebook()) || {};
 
   const note = await notes?.createNote(NOTE);
 
@@ -72,8 +74,7 @@ test("edit a notebook", async ({ page }) => {
 
   const item: Notebook = {
     title: "An Edited Notebook",
-    description: "A new edited description",
-    topics: ["Topic 1", "Topic 2", "Topic 3"]
+    description: "A new edited description"
   };
   await notebook?.editNotebook(item);
 
@@ -91,7 +92,7 @@ test("delete a notebook", async ({ page }) => {
   await notebook?.moveToTrash();
 
   expect(await notebook?.isPresent()).toBe(false);
-  expect(await app.toasts.waitForToast("1 notebook moved to trash")).toBe(true);
+  expect(await app.toasts.waitForToast("Notebook moved to trash")).toBe(true);
   const trash = await app.goToTrash();
   expect(await trash.findItem(NOTEBOOK.title)).toBeDefined();
 });
@@ -110,7 +111,7 @@ test("restore a notebook", async ({ page }) => {
   await app.goToNotebooks();
   const restoredNotebook = await notebooks.findNotebook(NOTEBOOK);
   expect(restoredNotebook).toBeDefined();
-  expect(await app.toasts.waitForToast("1 item restored")).toBe(true);
+  expect(await app.toasts.waitForToast("Item restored")).toBe(true);
 });
 
 test("permanently delete a notebook", async ({ page }) => {
@@ -121,10 +122,11 @@ test("permanently delete a notebook", async ({ page }) => {
   await notebook?.moveToTrash();
   const trash = await app.goToTrash();
   const trashItem = await trash.findItem(NOTEBOOK.title);
+  if (!trashItem) throw new Error("No trash item found.");
 
   await trashItem?.delete();
 
-  expect(await trashItem?.isPresent()).toBe(false);
+  await expect(trashItem.locator).toBeHidden();
 });
 
 test("pin a notebook", async ({ page }) => {
@@ -197,27 +199,47 @@ test("delete all notes within a notebook", async ({ page }) => {
   expect(await notes.isEmpty()).toBe(true);
 });
 
-test("delete all notes within a topic", async ({ page }) => {
+// test("delete all notes within a topic", async ({ page }) => {
+//   const app = new AppModel(page);
+//   await app.goto();
+//   const notebooks = await app.goToNotebooks();
+//   const notebook = await notebooks.createNotebook(NOTEBOOK);
+//   const { topics } = (await notebook?.openNotebook()) || {};
+//   const topic = await topics?.findItem({ title: NOTEBOOK.topics[0] });
+//   let notes = await topic?.open();
+//   for (let i = 0; i < 2; ++i) {
+//     await notes?.createNote({
+//       title: `Note ${i}`,
+//       content: NOTE.content
+//     });
+//   }
+//   await app.goBack();
+//   await app.goBack();
+
+//   await notebook?.moveToTrash(true);
+
+//   notes = await app.goToNotes();
+//   expect(await notes.isEmpty()).toBe(true);
+// });
+
+test("creating more than 20 notebooks shouldn't be possible on basic plan", async ({
+  page
+}, info) => {
+  info.setTimeout(2 * 60 * 1000);
+
+  await page.exposeBinding("isBasic", () => true);
   const app = new AppModel(page);
   await app.goto();
   const notebooks = await app.goToNotebooks();
-  const notebook = await notebooks.createNotebook(NOTEBOOK);
-  const { topics } = (await notebook?.openNotebook()) || {};
-  const topic = await topics?.findItem({ title: NOTEBOOK.topics[0] });
-  let notes = await topic?.open();
-  for (let i = 0; i < 2; ++i) {
-    await notes?.createNote({
-      title: `Note ${i}`,
-      content: NOTE.content
-    });
+  for (let i = 0; i < 20; ++i) {
+    await notebooks.createNotebook({ title: `Notebook ${i}` });
   }
-  await app.goBack();
-  await app.goBack();
 
-  await notebook?.moveToTrash(true);
-
-  notes = await app.goToNotes();
-  expect(await notes.isEmpty()).toBe(true);
+  const result = await Promise.race([
+    notebooks.createNotebook(NOTEBOOK),
+    app.toasts.waitForToast("Upgrade to Notesnook Pro to add more notebooks.")
+  ]);
+  expect(result).toBe(true);
 });
 
 test(`sort notebooks`, async ({ page }, info) => {
@@ -243,7 +265,7 @@ test(`sort notebooks`, async ({ page }, info) => {
           });
           if (!sortResult) return;
 
-          expect(await notebooks.isEmpty()).toBeFalsy();
+          await expect(notebooks.items).toHaveCount(titles.length);
         });
       }
     }

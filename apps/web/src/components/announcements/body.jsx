@@ -25,11 +25,6 @@ import {
   Text as RebassText
 } from "@theme-ui/components";
 import {
-  closeOpenedDialog,
-  showBuyDialog
-} from "../../common/dialog-controller";
-import { ANALYTICS_EVENTS, trackEvent } from "../../utils/analytics";
-import {
   Sync,
   Notebook,
   Tag2,
@@ -43,6 +38,8 @@ import { store as appStore } from "../../stores/app-store";
 import { createBackup } from "../../common";
 import { allowedPlatforms } from "../../stores/announcement-store";
 import { alpha } from "@theme-ui/color";
+import { BuyDialog } from "../../dialogs/buy-dialog/buy-dialog";
+import { DialogManager } from "../../common/dialog-manager";
 
 var margins = [0, 2];
 var HORIZONTAL_MARGIN = 3;
@@ -285,8 +282,7 @@ function CalltoAction({ action, variant, sx, dismissAnnouncement }) {
       sx={sx}
       onClick={async () => {
         if (dismissAnnouncement) dismissAnnouncement();
-        closeOpenedDialog();
-        trackEvent(ANALYTICS_EVENTS.announcementCta, action);
+        DialogManager.closeAll();
         switch (action.type) {
           case "link": {
             const url = new URL(action.data);
@@ -299,15 +295,15 @@ function CalltoAction({ action, variant, sx, dismissAnnouncement }) {
           }
           case "promo": {
             const [coupon, plan] = action.data.split(":");
-            await showBuyDialog(plan, coupon);
+            await BuyDialog.show({ plan, coupon });
             break;
           }
           case "force-sync": {
-            await appStore.sync(true, true);
+            await appStore.sync({ type: "full", force: true });
             break;
           }
           case "backup": {
-            await createBackup(true);
+            await createBackup();
             break;
           }
           default: {

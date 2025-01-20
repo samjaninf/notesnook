@@ -19,12 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { Flex, Text } from "@theme-ui/components";
 import { Cross } from "../icons";
-import { ANALYTICS_EVENTS, trackEvent } from "../../utils/analytics";
 import AnnouncementBody from "./body";
 import { useStore as useAnnouncementStore } from "../../stores/announcement-store";
 import Notice from "../notice";
 
 import { alpha } from "@theme-ui/color";
+import { strings } from "@notesnook/intl";
 
 function Announcements() {
   const announcements = useAnnouncementStore(
@@ -57,9 +57,8 @@ function Announcements() {
           cursor: "pointer",
           alignSelf: "end"
         }}
-        title="Dismiss announcement"
+        title={strings.dismissAnnouncement()}
         onClick={() => {
-          trackEvent(ANALYTICS_EVENTS.announcementDismissed, announcement);
           dismiss(announcement.id);
         }}
       >

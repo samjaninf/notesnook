@@ -34,14 +34,6 @@ import {
   Slice
 } from "prosemirror-model";
 import { EditorState, Selection, Transaction } from "prosemirror-state";
-import { BulletList } from "../extensions/bullet-list";
-import { ListItem } from "../extensions/list-item";
-import { OrderedList } from "../extensions/ordered-list";
-import { OutlineList } from "../extensions/outline-list";
-import { OutlineListItem } from "../extensions/outline-list-item";
-import { TaskItemNode } from "../extensions/task-item";
-import { TaskListNode } from "../extensions/task-list";
-import { LIST_NODE_TYPES } from "./node-types";
 import TextStyle from "@tiptap/extension-text-style";
 
 export type NodeWithOffset = {
@@ -57,25 +49,6 @@ export function hasSameAttributes(prev: Attrs, next: Attrs) {
     if (prevValue !== nextValue) return false;
   }
   return true;
-}
-
-export function findListItemType(editor: Editor): string | null {
-  const isTaskList = editor.isActive(TaskListNode.name);
-  const isOutlineList = editor.isActive(OutlineList.name);
-  const isList =
-    editor.isActive(BulletList.name) || editor.isActive(OrderedList.name);
-
-  return isList
-    ? ListItem.name
-    : isOutlineList
-    ? OutlineListItem.name
-    : isTaskList
-    ? TaskItemNode.name
-    : null;
-}
-
-export function isListActive(editor: Editor): boolean {
-  return LIST_NODE_TYPES.some((name) => editor.isActive(name));
 }
 
 export function findSelectedDOMNode(
@@ -124,14 +97,12 @@ export function findMark(
 export function selectionToOffset(
   state: EditorState
 ): NodeWithOffset | undefined {
-  const { from, $from } = state.selection;
+  const { from, $from, to, $to } = state.selection;
   const node = state.doc.nodeAt(from);
-  if (!node) return;
-
   return {
-    node,
+    node: node || undefined,
     from: from - $from.textOffset,
-    to: from - $from.textOffset + node.nodeSize
+    to: node ? from - $from.textOffset + node.nodeSize : to - $to.textOffset
   };
 }
 

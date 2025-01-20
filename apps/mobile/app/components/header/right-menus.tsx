@@ -19,58 +19,58 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import React, { useRef } from "react";
 import { Platform, StyleSheet, View } from "react-native";
-//@ts-ignore
-import Menu from "react-native-reanimated-material-menu";
-import { notesnook } from "../../../e2e/test.ids";
-import Navigation from "../../services/navigation";
-import SearchService from "../../services/search";
-import useNavigationStore from "../../stores/use-navigation-store";
-import { useSettingStore } from "../../stores/use-setting-store";
 import { useThemeColors } from "@notesnook/theme";
+import { Menu } from "react-native-material-menu";
+import { notesnook } from "../../../e2e/test.ids";
+import {
+  HeaderRightButton,
+  RouteName
+} from "../../stores/use-navigation-store";
+import { useSettingStore } from "../../stores/use-setting-store";
 import { SIZE } from "../../utils/size";
 import { sleep } from "../../utils/time";
 import { Button } from "../ui/button";
 import { IconButton } from "../ui/icon-button";
 
-export const RightMenus = () => {
+export const RightMenus = ({
+  headerRightButtons,
+  renderedInRoute,
+  id,
+  onPressDefaultRightButton,
+  search,
+  onSearch
+}: {
+  headerRightButtons?: HeaderRightButton[];
+  renderedInRoute?: RouteName;
+  id?: string;
+  onPressDefaultRightButton?: () => void;
+  search?: boolean;
+  onSearch?: () => void;
+}) => {
   const { colors } = useThemeColors();
   const { colors: contextMenuColors } = useThemeColors("contextMenu");
   const deviceMode = useSettingStore((state) => state.deviceMode);
-  const buttons = useNavigationStore((state) => state.headerRightButtons);
-  const currentScreen = useNavigationStore((state) => state.currentScreen.name);
-  const buttonAction = useNavigationStore((state) => state.buttonAction);
-  const menuRef = useRef<{
-    show: () => void;
-    hide: () => void;
-  }>();
+  const menuRef = useRef<Menu>(null);
 
   return (
     <View style={styles.rightBtnContainer}>
-      {!currentScreen.startsWith("Settings") ? (
+      {search ? (
         <IconButton
-          onPress={async () => {
-            SearchService.prepareSearch();
-            Navigation.navigate(
-              {
-                name: "Search"
-              },
-              {}
-            );
-          }}
+          onPress={onSearch}
           testID="icon-search"
           name="magnify"
           color={colors.primary.paragraph}
-          customStyle={styles.rightBtn}
+          style={styles.rightBtn}
         />
       ) : null}
 
       {deviceMode !== "mobile" ? (
         <Button
-          onPress={buttonAction}
+          onPress={onPressDefaultRightButton}
           testID={notesnook.ids.default.addBtn}
-          icon={currentScreen === "Trash" ? "delete" : "plus"}
+          icon={renderedInRoute === "Trash" ? "delete" : "plus"}
           iconSize={SIZE.xl}
-          type="shade"
+          type="accent"
           hitSlop={{
             top: 10,
             right: 10,
@@ -81,7 +81,7 @@ export const RightMenus = () => {
             marginLeft: 10,
             width: 32,
             height: 32,
-            borderRadius: 5,
+            borderRadius: 100,
             paddingHorizontal: 0,
             borderWidth: 1,
             borderColor: colors.primary.accent
@@ -89,42 +89,47 @@ export const RightMenus = () => {
         />
       ) : null}
 
-      {buttons && buttons.length > 0 ? (
+      {headerRightButtons && headerRightButtons.length > 0 ? (
         <Menu
           ref={menuRef}
           animationDuration={200}
           style={{
             borderRadius: 5,
-            backgroundColor: contextMenuColors.primary.background
+            backgroundColor: contextMenuColors.primary.background,
+            marginTop: 35
           }}
           onRequestClose={() => {
+            //@ts-ignore
             menuRef.current?.hide();
           }}
           anchor={
             <IconButton
               onPress={() => {
+                //@ts-ignore
                 menuRef.current?.show();
               }}
               name="dots-vertical"
               color={colors.primary.paragraph}
-              customStyle={styles.rightBtn}
+              style={styles.rightBtn}
             />
           }
         >
-          {buttons.map((item) => (
+          {headerRightButtons.map((item) => (
             <Button
               style={{
-                width: 150,
                 justifyContent: "flex-start",
-                borderRadius: 0
+                borderRadius: 0,
+                alignSelf: "flex-start",
+                width: "100%"
               }}
-              type="gray"
+              type="plain"
               buttonType={{
                 text: contextMenuColors.primary.paragraph
               }}
               key={item.title}
               title={item.title}
               onPress={async () => {
+                //@ts-ignore
                 menuRef.current?.hide();
                 if (Platform.OS === "ios") await sleep(300);
                 item.onPress();

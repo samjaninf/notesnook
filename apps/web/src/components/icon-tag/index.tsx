@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { Flex, Text } from "@theme-ui/components";
 import { ThemeUICSSObject } from "@theme-ui/core";
 import { Close, Icon } from "../icons";
+import { strings } from "@notesnook/intl";
 
 type IconTagProps = {
   text: string;
@@ -84,7 +85,7 @@ function IconTag(props: IconTagProps) {
     >
       <Icon
         size={11}
-        // color={styles?.icon?.color || (highlight ? "primary" : "icon")}
+        color={highlight ? "accent" : "icon"}
         sx={{ ...styles?.icon, flexShrink: 0 }}
       />
       <Text
@@ -105,7 +106,7 @@ function IconTag(props: IconTagProps) {
       {onDismiss && (
         <Close
           size={12}
-          title="Remove"
+          title={strings.remove()}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();

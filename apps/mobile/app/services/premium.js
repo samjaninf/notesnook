@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { CHECK_IDS } from "@notesnook/core/dist/common";
+import { CHECK_IDS } from "@notesnook/core";
 import React from "react";
 import { Platform } from "react-native";
 import Config from "react-native-config";
@@ -35,9 +35,10 @@ import {
   eOpenTrialEndingDialog,
   eShowGetPremium
 } from "../utils/events";
-import { eSendEvent, presentSheet, ToastEvent } from "./event-manager";
+import { eSendEvent, presentSheet, ToastManager } from "./event-manager";
 
 import SettingsService from "./settings";
+import { strings } from "@notesnook/intl";
 let premiumStatus = 0;
 
 /**
@@ -75,9 +76,7 @@ async function setPremiumStatus() {
     products = await RNIap.getSubscriptions({
       skus: itemSkus
     });
-  } catch (e) {
-    console.log("subscriptions: ", e);
-  }
+  } catch (e) {}
   if (premiumStatus === 0 && !__DEV__) {
     SettingsService.reset();
   }
@@ -141,36 +140,36 @@ const onUserStatusCheck = async (type) => {
       case CHECK_IDS.noteColor:
         message = {
           context: "sheet",
-          title: "Get Notesnook Pro",
-          desc: "To assign colors to a note get Notesnook Pro today."
+          title: strings.getNotesnookPro(),
+          desc: strings.colorsProMessage()
         };
         break;
       case CHECK_IDS.noteExport:
         message = {
           context: "export",
-          title: "Export in PDF, MD & HTML",
-          desc: "Get Notesnook Pro to export your notes in PDF, Markdown and HTML formats!"
+          title: strings.getNotesnookPro(),
+          desc: strings.exportProMessage()
         };
         break;
       case CHECK_IDS.noteTag:
         message = {
           context: "sheet",
-          title: "Get Notesnook Pro",
-          desc: "To create more tags for your notes become a Pro user today."
+          title: strings.getNotesnookPro(),
+          desc: strings.tagsProMessage()
         };
         break;
       case CHECK_IDS.notebookAdd:
         message = {
           context: "sheet",
-          title: "Get Notesnook Pro",
-          desc: "With Notesnook Pro you can create unlimited notebooks and do so much more! Get it now."
+          title: strings.getNotesnookPro(),
+          desc: strings.notebookProMessage()
         };
         break;
       case CHECK_IDS.vaultAdd:
         message = {
           context: "sheet",
-          title: "Add Notes to Vault",
-          desc: "With Notesnook Pro you can add notes to your vault and do so much more! Get it now."
+          title: strings.getNotesnookPro(),
+          desc: strings.vaultProMessage()
         };
         break;
     }
@@ -184,9 +183,8 @@ const onUserStatusCheck = async (type) => {
 
 const showVerifyEmailDialog = () => {
   presentSheet({
-    title: "Confirm your email",
-    paragraph:
-      "We have sent you an email confirmation link. Please check your email inbox. If you cannot find the email, check your spam folder.",
+    title: strings.confirmEmail(),
+    paragraph: strings.emailConfirmationLinkSent(),
     action: async () => {
       try {
         let lastVerificationEmailTime =
@@ -195,8 +193,8 @@ const showVerifyEmailDialog = () => {
           lastVerificationEmailTime &&
           Date.now() - lastVerificationEmailTime < 60000 * 2
         ) {
-          ToastEvent.show({
-            heading: "Please wait before requesting another email",
+          ToastManager.show({
+            heading: strings.waitBeforeResendEmail(),
             type: "error",
             context: "local"
           });
@@ -208,23 +206,22 @@ const showVerifyEmailDialog = () => {
           lastVerificationEmailTime: Date.now()
         });
 
-        ToastEvent.show({
-          heading: "Verification email sent!",
-          message:
-            "We have sent you an email confirmation link. Please check your email inbox to verify your account. If you cannot find the email, check your spam folder.",
+        ToastManager.show({
+          heading: strings.verificationEmailSent(),
+          message: strings.emailConfirmationLinkSent(),
           type: "success",
           context: "local"
         });
       } catch (e) {
-        ToastEvent.show({
-          heading: "Could not send email",
+        ToastManager.show({
+          heading: strings.failedToSendVerificationEmail(),
           message: e.message,
           type: "error",
           context: "local"
         });
       }
     },
-    actionText: "Resend Confirmation Link"
+    actionText: strings.resendEmail()
   });
 };
 
@@ -300,7 +297,6 @@ const subscriptions = {
           }
         };
 
-        console.log("Subscription.verify", requestData);
         try {
           let result = await fetch(
             __DEV__
@@ -308,7 +304,7 @@ const subscriptions = {
               : "https://payments.streetwriters.co/apple/verify",
             requestData
           );
-          console.log("Subscribed", result);
+
           let text = await result.text();
 
           if (!result.ok) {
@@ -319,9 +315,7 @@ const subscriptions = {
           } else {
             await subscriptions.clear(subscription);
           }
-        } catch (e) {
-          console.log("subscription error", e);
-        }
+        } catch (e) {}
       }
     }
   },
@@ -359,7 +353,7 @@ async function getRemainingTrialDaysStatus() {
 
   if (current > 75 && isTrial && lastTrialDialogShownAt !== "ending") {
     eSendEvent(eOpenTrialEndingDialog, {
-      title: "Your trial is ending soon",
+      title: strings.trialEndingSoon(),
       offer: null,
       extend: false
     });
@@ -369,7 +363,7 @@ async function getRemainingTrialDaysStatus() {
 
   if (!premium && lastTrialDialogShownAt !== "expired") {
     eSendEvent(eOpenTrialEndingDialog, {
-      title: "Your trial has expired",
+      title: strings.trialExpired(),
       offer: 30,
       extend: false
     });

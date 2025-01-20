@@ -20,15 +20,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import React from "react";
 import { Linking, View } from "react-native";
 //import SettingsBackupAndRestore from '../../screens/settings/backup-restore';
-import { eSendEvent, presentSheet } from "../../services/event-manager";
-import Sync from "../../services/sync";
 import { useThemeColors } from "@notesnook/theme";
-import { eCloseAnnouncementDialog, eCloseSheet } from "../../utils/events";
+import { eSendEvent, presentSheet } from "../../services/event-manager";
+import { eCloseAnnouncementDialog } from "../../utils/events";
 import { SIZE } from "../../utils/size";
 import { sleep } from "../../utils/time";
 import { PricingPlans } from "../premium/pricing-plans";
 import SheetProvider from "../sheet-provider";
-import { Progress } from "../sheets/progress";
 import { Button } from "../ui/button";
 import { allowedOnPlatform, getStyle } from "./functions";
 
@@ -43,7 +41,9 @@ export const Cta = ({ actions, style = {}, color, inline }) => {
       await sleep(500);
     }
     if (item.type === "link") {
-      Linking.openURL(item.data).catch(console.log);
+      Linking.openURL(item.data).catch(() => {
+        /* empty */
+      });
     } else if (item.type === "promo") {
       presentSheet({
         component: (
@@ -55,13 +55,6 @@ export const Cta = ({ actions, style = {}, color, inline }) => {
             }}
           />
         )
-      });
-    } else if (item.type === "force-sync") {
-      eSendEvent(eCloseSheet);
-      await sleep(300);
-      Progress.present();
-      Sync.run("global", true, true, () => {
-        eSendEvent(eCloseSheet);
       });
     }
   };
@@ -103,7 +96,7 @@ export const Cta = ({ actions, style = {}, color, inline }) => {
                 key={item.title}
                 title={item.title}
                 fontSize={SIZE.sm}
-                type="gray"
+                type="plain"
                 onPress={() => onPress(item)}
                 width={null}
                 height={30}
@@ -149,7 +142,7 @@ export const Cta = ({ actions, style = {}, color, inline }) => {
                 key={item.title}
                 title={item.title}
                 fontSize={SIZE.xs}
-                type="gray"
+                type="plain"
                 onPress={() => onPress(item)}
                 width={null}
                 height={30}

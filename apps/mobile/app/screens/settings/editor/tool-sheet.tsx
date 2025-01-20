@@ -17,10 +17,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolId } from "@notesnook/editor/dist/toolbar";
+import type { ToolId } from "@notesnook/editor";
 import React, { RefObject } from "react";
 import { View } from "react-native";
-import { PressableButton } from "../../../components/ui/pressable";
+import { Pressable } from "../../../components/ui/pressable";
 import { SvgView } from "../../../components/ui/svg";
 import Paragraph from "../../../components/ui/typography/paragraph";
 import { presentSheet } from "../../../services/event-manager";
@@ -33,6 +33,7 @@ import {
   getUngroupedTools
 } from "./toolbar-definition";
 import { ActionSheetRef, ScrollView } from "react-native-actions-sheet";
+import { strings } from "@notesnook/intl";
 
 export default function ToolSheet({
   group,
@@ -53,9 +54,9 @@ export default function ToolSheet({
         : null;
       if (item === "none") return;
       return (
-        <PressableButton
+        <Pressable
           key={item}
-          type="grayBg"
+          type="secondary"
           onPress={() => {
             const _data = useDragState.getState().data.slice();
             if (group.groupIndex !== undefined) {
@@ -67,7 +68,7 @@ export default function ToolSheet({
             }
             useDragState.getState().setData(_data);
           }}
-          customStyle={{
+          style={{
             marginBottom: 10,
             width: "100%",
             height: 50,
@@ -98,7 +99,7 @@ export default function ToolSheet({
               {tool?.title}
             </Paragraph>
           </View>
-        </PressableButton>
+        </Pressable>
       );
     },
     [
@@ -124,7 +125,7 @@ export default function ToolSheet({
             }}
             color={colors.secondary.paragraph}
           >
-            You have grouped all the tools.
+            {strings.groupedAllTools()}
           </Paragraph>
         ) : (
           ungrouped.map(renderTool)

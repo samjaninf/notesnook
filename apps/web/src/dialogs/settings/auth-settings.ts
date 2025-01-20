@@ -19,45 +19,58 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { SettingsGroup } from "./types";
 import { useStore as useUserStore } from "../../stores/user-store";
-import { verifyAccount } from "../../common";
-import {
-  show2FARecoveryCodesDialog,
-  showMultifactorDialog,
-  showPasswordDialog
-} from "../../common/dialog-controller";
+import { createBackup, verifyAccount } from "../../common";
+import { showPasswordDialog } from "../../dialogs/password-dialog";
 import { db } from "../../common/db";
 import { showToast } from "../../utils/toast";
+import { RecoveryCodesDialog } from "../mfa/recovery-code-dialog";
+import { MultifactorDialog } from "../mfa/multi-factor-dialog";
+import { RecoveryKeyDialog } from "../recovery-key-dialog";
+import { strings } from "@notesnook/intl";
 
 export const AuthenticationSettings: SettingsGroup[] = [
   {
-    header: "Password",
+    header: strings.password(),
     key: "password",
     section: "auth",
     settings: [
       {
         key: "change-password",
-        title: "Change password",
-        description: "Set a new password for your account",
-        keywords: ["change password", "new password"],
+        title: strings.changePassword(),
+        description: strings.changePassword(),
+        keywords: [strings.changePassword(), strings.newPassword()],
         components: [
           {
             type: "button",
-            title: "Change password",
+            title: strings.changePassword(),
             variant: "secondary",
             action: async () => {
-              const result = await showPasswordDialog(
-                "change_account_password",
-                async (data) => {
-                  await db.user?.clearSessions();
+              const result = await showPasswordDialog({
+                title: strings.changePassword(),
+                message: strings.changePasswordDesc(),
+                inputs: {
+                  oldPassword: {
+                    label: strings.oldPassword(),
+                    autoComplete: "current-password"
+                  },
+                  newPassword: {
+                    label: strings.newPassword(),
+                    autoComplete: "new-password"
+                  }
+                },
+                validate: async ({ oldPassword, newPassword }) => {
+                  if (!(await createBackup())) return false;
+                  await db.user.clearSessions();
                   return (
-                    db.user?.changePassword(
-                      data.oldPassword,
-                      data.newPassword
-                    ) || false
+                    (await db.user.changePassword(oldPassword, newPassword)) ||
+                    false
                   );
                 }
-              );
-              if (result) showToast("success", "Account password changed!");
+              });
+              if (result) {
+                showToast("success", strings.passwordChangedSuccessfully());
+                await RecoveryKeyDialog.show({});
+              }
             }
           }
         ]
@@ -65,34 +78,31 @@ export const AuthenticationSettings: SettingsGroup[] = [
     ]
   },
   {
-    header: "Two-factor authentication",
+    header: strings.twoFactorAuth(),
     key: "2fa",
     section: "auth",
     settings: [
       {
         key: "2fa-enabled",
-        title: "2FA enabled",
-        description: "Your account is secured by 2FA.",
+        title: strings.twoFactorAuthEnabled(),
+        description: strings.accountIsSecure(),
         keywords: [],
         components: []
       },
       {
         key: "primary-2fa-method",
-        title: "Primary method",
+        title: strings.change2faMethod(),
         keywords: ["primary 2fa method"],
-        description: () =>
-          `Your current 2FA method is ${
-            useUserStore.getState().user?.mfa.primaryMethod
-          }.`,
+        description: strings.twoFactorAuthDesc(),
         onStateChange: (listener) =>
           useUserStore.subscribe((s) => s.user?.mfa.primaryMethod, listener),
         components: [
           {
             type: "button",
-            title: "Change",
+            title: strings.change(),
             action: async () => {
               if (await verifyAccount()) {
-                await showMultifactorDialog();
+                await MultifactorDialog.show({});
                 await useUserStore.getState().refreshUser();
               }
             },
@@ -102,24 +112,24 @@ export const AuthenticationSettings: SettingsGroup[] = [
       },
       {
         key: "fallback-2fa-method",
-        title: "Fallback method",
-        description:
-          "You can use the fallback 2FA method in case you are unable to login via the primary method.",
-        keywords: ["backup 2fa method"],
+        title: strings.addFallback2faMethod(),
+        description: strings.addFallback2faMethodDesc(),
+        keywords: ["backup 2fa methods"],
         onStateChange: (listener) =>
           useUserStore.subscribe((s) => s.user?.mfa.secondaryMethod, listener),
         components: () => [
           {
             type: "button",
             title: useUserStore.getState().user?.mfa.secondaryMethod
-              ? "Reconfigure fallback 2FA method"
-              : "Add fallback 2FA method",
+              ? strings.change2faFallbackMethod()
+              : strings.addFallback2faMethod(),
             variant: "secondary",
             action: async () => {
               if (await verifyAccount()) {
-                await showMultifactorDialog(
-                  useUserStore.getState().user?.mfa.primaryMethod || "email"
-                );
+                await MultifactorDialog.show({
+                  primaryMethod:
+                    useUserStore.getState().user?.mfa.primaryMethod || "email"
+                });
                 await useUserStore.getState().refreshUser();
               }
             }
@@ -128,20 +138,20 @@ export const AuthenticationSettings: SettingsGroup[] = [
       },
       {
         key: "recovery-codes",
-        title: "Recovery codes",
-        description:
-          "Recovery codes can be used to login in case you cannot use any of the other 2FA methods.",
-        keywords: ["2fa recovery codes"],
+        title: strings.viewRecoveryCodes(),
+        description: strings.viewRecoveryCodesDesc(),
+        keywords: ["recovery codes"],
         components: [
           {
             type: "button",
-            title: "View recovery codes",
+            title: strings.viewRecoveryCodes(),
             variant: "secondary",
             action: async () => {
               if (await verifyAccount()) {
-                await show2FARecoveryCodesDialog(
-                  useUserStore.getState().user?.mfa.primaryMethod || "email"
-                );
+                await RecoveryCodesDialog.show({
+                  primaryMethod:
+                    useUserStore.getState().user?.mfa.primaryMethod || "email"
+                });
                 await useUserStore.getState().refreshUser();
               }
             }

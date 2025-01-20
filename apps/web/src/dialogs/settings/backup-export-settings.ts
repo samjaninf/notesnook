@@ -17,51 +17,52 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { createBackup, verifyAccount, importBackup } from "../../common";
+import { db } from "../../common/db";
+import { exportNotes } from "../../common/export";
 import { SettingsGroup } from "./types";
+import { strings } from "@notesnook/intl";
 import { useStore as useSettingStore } from "../../stores/setting-store";
 import { useStore as useAppStore } from "../../stores/app-store";
 import { useStore as useUserStore } from "../../stores/user-store";
-import { isUserPremium } from "../../hooks/use-is-user-premium";
-import { createBackup, importBackup, verifyAccount } from "../../common";
-import { db } from "../../common/db";
-import { exportNotes } from "../../common/export";
-
 import { desktop } from "../../common/desktop-bridge";
 import { PATHS } from "@notesnook/desktop";
+
+const getDesktopBackupsDirectoryPath = () =>
+  useSettingStore.getState().backupStorageLocation || PATHS.backupsDirectory;
 
 export const BackupExportSettings: SettingsGroup[] = [
   {
     key: "backup",
     section: "backup-export",
-    header: "Backups",
+    header: strings.backups(),
     settings: [
       {
         key: "create-backup",
-        title: "Backup now",
-        description: "Create a backup file containing all your data",
+        title: strings.backupNow(),
+        description: strings.backupNowDesc(),
         components: [
           {
-            type: "button",
-            title: "Create backup",
-            action: async () => {
-              if (
-                !useUserStore.getState().isLoggedIn &&
-                useSettingStore.getState().encryptBackups
-              )
-                useSettingStore.getState().toggleEncryptBackups();
-              const verified =
-                useSettingStore.getState().encryptBackups ||
-                (await verifyAccount());
-              if (verified) await createBackup();
-            },
-            variant: "secondary"
+            type: "dropdown",
+            options: [
+              { value: "-", title: strings.chooseBackupFormat() },
+              { value: "partial", title: strings.backup() },
+              { value: "full", title: strings.backupWithAttachments() }
+            ],
+            selectedOption: () => "-",
+            onSelectionChanged: async (value) => {
+              if (value === "-") return;
+              await createBackup({
+                mode: value === "partial" ? "partial" : "full"
+              });
+            }
           }
         ]
       },
       {
         key: "restore-backup",
-        title: "Restore backup",
-        description: "Restore a backup file from your disk drive.",
+        title: strings.restoreBackup(),
+        description: strings.restoreBackupDesc(),
         components: [
           {
             type: "button",
@@ -77,21 +78,19 @@ export const BackupExportSettings: SettingsGroup[] = [
       },
       {
         key: "auto-backup",
-        title: IS_DESKTOP_APP ? "Automatic backups" : "Backup reminders",
-        description: IS_DESKTOP_APP
-          ? "Backup all your data automatically at a set interval."
-          : "You will be shown regular reminders to backup your data.",
-        isHidden: () => !isUserPremium(),
+        title: strings.automaticBackups(),
+        description: strings.automaticBackupsDesc(),
+        // isHidden: () => !isUserPremium(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.backupReminderOffset, listener),
         components: [
           {
             type: "dropdown",
             options: [
-              { value: "0", title: "Never" },
-              { value: "1", title: "Daily" },
-              { value: "2", title: "Weekly" },
-              { value: "3", title: "Monthly" }
+              { value: "0", title: strings.never(), premium: true },
+              { value: "1", title: strings.daily(), premium: true },
+              { value: "2", title: strings.weekly(), premium: true },
+              { value: "3", title: strings.monthly(), premium: true }
             ],
             selectedOption: () =>
               useSettingStore.getState().backupReminderOffset.toString(),
@@ -108,13 +107,47 @@ export const BackupExportSettings: SettingsGroup[] = [
         ]
       },
       {
+        key: "auto-backup-with-attachments",
+        title: strings.automaticBackupsWithAttachments(),
+        description: strings.automaticBackupsWithAttachmentsDesc().join("\n\n"),
+        onStateChange: (listener) =>
+          useSettingStore.subscribe(
+            (s) => s.fullBackupReminderOffset,
+            listener
+          ),
+        components: [
+          {
+            type: "dropdown",
+            options: [
+              { value: "0", title: strings.never(), premium: true },
+              { value: "1", title: strings.weekly(), premium: true },
+              { value: "2", title: strings.monthly(), premium: true }
+            ],
+            selectedOption: () =>
+              useSettingStore.getState().fullBackupReminderOffset.toString(),
+            onSelectionChanged: async (value) => {
+              const verified =
+                useSettingStore.getState().encryptBackups ||
+                (await verifyAccount());
+              if (verified)
+                useSettingStore
+                  .getState()
+                  .setFullBackupReminderOffset(parseInt(value));
+            }
+          }
+        ]
+      },
+      {
         key: "encrypt-backups",
-        title: "Backup encryption",
-        description: "Encrypt all backup files using your master key.",
+        title: strings.backupEncryption(),
+        description: strings.backupEncryptionDesc(),
         isHidden: () => !useUserStore.getState().isLoggedIn,
         onStateChange: (listener) => {
-          useUserStore.subscribe((s) => s.isLoggedIn, listener);
-          useSettingStore.subscribe((s) => s.encryptBackups, listener);
+          const subscriptions = [
+            useUserStore.subscribe((s) => s.isLoggedIn, listener),
+            useSettingStore.subscribe((s) => s.encryptBackups, listener)
+          ];
+          return () => subscriptions.forEach((s) => s());
         },
         components: [
           {
@@ -133,25 +166,26 @@ export const BackupExportSettings: SettingsGroup[] = [
       },
       {
         key: "backup-directory",
-        title: "Backups directory",
-        description: "Select directory to store all backup files.",
+        title: strings.selectBackupDir(),
+        description: () =>
+          strings
+            .selectBackupDirDesc(getDesktopBackupsDirectoryPath())
+            .join("\n\n"),
         isHidden: () => !IS_DESKTOP_APP,
         components: [
           {
             type: "button",
-            title: "Select directory",
+            title: strings.select(),
             action: async () => {
               const verified =
                 useSettingStore.getState().encryptBackups ||
                 (await verifyAccount());
               if (!verified) return;
 
-              const backupStorageLocation =
-                useSettingStore.getState().backupStorageLocation ||
-                PATHS.backupsDirectory;
+              const backupStorageLocation = getDesktopBackupsDirectoryPath();
               const location = await desktop?.integration.selectDirectory.query(
                 {
-                  title: "Select where Notesnook should save backups",
+                  title: strings.selectBackupDir(),
                   defaultPath: backupStorageLocation
                 }
               );
@@ -167,17 +201,17 @@ export const BackupExportSettings: SettingsGroup[] = [
   {
     key: "export",
     section: "backup-export",
-    header: "Export",
+    header: strings.export(),
     settings: [
       {
         key: "export-notes",
-        title: "Export all notes",
-        description: "Export all notes as Markdown, HTML or Plaintext.",
+        title: strings.exportAllNotes(),
+        description: strings.exportAllNotesDesc(),
         components: [
           {
             type: "dropdown",
             options: [
-              { value: "-", title: "Select format" },
+              { value: "-", title: strings.exportAs() },
               { value: "txt", title: "Text" },
               { value: "md", title: "Markdown", premium: true },
               {
@@ -193,7 +227,7 @@ export const BackupExportSettings: SettingsGroup[] = [
               if (await verifyAccount())
                 await exportNotes(
                   value as "txt" | "md" | "html" | "md-frontmatter",
-                  db.notes.all.map((n) => n.id)
+                  db.notes.all
                 );
             }
           }

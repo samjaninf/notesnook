@@ -22,37 +22,29 @@ import { db } from "../../common/database";
 import { FloatingButton } from "../../components/container/floating-button";
 import DelayLayout from "../../components/delay-layout";
 import { presentDialog } from "../../components/dialog/functions";
+import { Header } from "../../components/header";
 import List from "../../components/list";
 import { useNavigationFocus } from "../../hooks/use-navigation-focus";
-import { ToastEvent } from "../../services/event-manager";
+import { ToastManager } from "../../services/event-manager";
 import Navigation, { NavigationProps } from "../../services/navigation";
-import SearchService from "../../services/search";
 import useNavigationStore from "../../stores/use-navigation-store";
 import { useSelectionStore } from "../../stores/use-selection-store";
-import { useTrashStore } from "../../stores/use-trash-store";
-const prepareSearch = () => {
-  SearchService.update({
-    placeholder: "Search in trash",
-    type: "trash",
-    title: "Trash",
-    get: () => db.trash?.all
-  });
-};
+import { useTrash, useTrashStore } from "../../stores/use-trash-store";
+import SelectionHeader from "../../components/selection-header";
+import { strings } from "@notesnook/intl";
 
 const onPressFloatingButton = () => {
   presentDialog({
-    title: "Clear trash",
-    paragraph: "Are you sure you want to clear the trash?",
-    positiveText: "Clear",
-    negativeText: "Cancel",
+    title: strings.clearTrash(),
+    paragraph: strings.clearTrashConfirm(),
+    positiveText: strings.clear(),
+    negativeText: strings.cancel(),
     positivePress: async () => {
       await db.trash?.clear();
-      useTrashStore.getState().setTrash();
+      useTrashStore.getState().refresh();
       useSelectionStore.getState().clearSelection();
-      ToastEvent.show({
-        heading: "Trash cleared",
-        message:
-          "All notes and notebooks in the trash have been removed permanently.",
+      ToastManager.show({
+        heading: strings.trashCleared(),
         type: "success",
         context: "local"
       });
@@ -61,67 +53,71 @@ const onPressFloatingButton = () => {
   });
 };
 const PLACEHOLDER_DATA = (trashCleanupInterval = 7) => ({
-  heading: "Trash",
+  title: strings.trash(),
   paragraph:
     trashCleanupInterval === -1
-      ? "Set automatic trash cleanup interval from Settings > Behaviour > Clean trash interval."
-      : `Trash gets automatically cleaned up ${
-          trashCleanupInterval === 1
-            ? "daily."
-            : `after ${trashCleanupInterval} days.`
-        }`,
-  button: null,
-  loading: "Loading trash items"
+      ? strings.noTrashCleanupInterval()
+      : trashCleanupInterval === 1
+      ? strings.trashCleanupIntervalTextDaily()
+      : strings.trashCleanupIntervalTextDays(trashCleanupInterval),
+  loading: strings.loadingTrash()
 });
 
 export const Trash = ({ navigation, route }: NavigationProps<"Trash">) => {
-  const trash = useTrashStore((state) => state.trash);
+  const [trash, loading] = useTrash();
   const isFocused = useNavigationFocus(navigation, {
     onFocus: () => {
       Navigation.routeNeedsUpdate(
         route.name,
         Navigation.routeUpdateFunctions[route.name]
       );
-      useNavigationStore.getState().update({
-        name: route.name
-      });
-      if (useTrashStore.getState().trash.length === 0) {
-        useTrashStore.getState().setTrash();
-      }
-      SearchService.prepareSearch = prepareSearch;
+      useNavigationStore.getState().setFocusedRouteId(route.name);
       return false;
     },
     onBlur: () => false
   });
 
   return (
-    <DelayLayout>
-      <List
-        listData={trash}
+    <>
+      <SelectionHeader
+        id={route.name}
+        items={trash}
         type="trash"
-        screen="Trash"
-        loading={!isFocused}
-        placeholderData={PLACEHOLDER_DATA(
-          db.settings?.getTrashCleanupInterval()
-        )}
-        headerProps={{
-          heading: "Trash",
-          color: null
-        }}
-        // TODO: remove these once we have full typings everywhere
-        ListHeader={undefined}
-        refreshCallback={undefined}
-        warning={undefined}
+        renderedInRoute={route.name}
       />
-
-      {trash && trash.length !== 0 ? (
-        <FloatingButton
-          title="Clear all trash"
-          onPress={onPressFloatingButton}
-          alwaysVisible={true}
+      <Header
+        renderedInRoute={route.name}
+        title={route.name}
+        id={route.name}
+        canGoBack={false}
+        hasSearch={true}
+        onSearch={() => {
+          Navigation.push("Search", {
+            placeholder: strings.searchInRoute(route.name),
+            type: "trash",
+            title: route.name,
+            route: route.name
+          });
+        }}
+      />
+      <DelayLayout wait={loading}>
+        <List
+          data={trash}
+          dataType="trash"
+          renderedInRoute="Trash"
+          loading={!isFocused}
+          placeholder={PLACEHOLDER_DATA(db.settings.getTrashCleanupInterval())}
+          headerTitle="Trash"
         />
-      ) : null}
-    </DelayLayout>
+
+        {trash && trash?.placeholders?.length !== 0 ? (
+          <FloatingButton
+            onPress={onPressFloatingButton}
+            alwaysVisible={true}
+          />
+        ) : null}
+      </DelayLayout>
+    </>
   );
 };
 

@@ -17,23 +17,24 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import Clipboard from "@react-native-clipboard/clipboard";
+import { sanitizeFilename } from "@notesnook/common";
+import { format, LogLevel, logManager } from "@notesnook/core";
+import { strings } from "@notesnook/intl";
 import { LogMessage } from "@notesnook/logger";
-import { format, LogLevel, logManager } from "@notesnook/core/dist/logger";
+import { useThemeColors } from "@notesnook/theme";
+import Clipboard from "@react-native-clipboard/clipboard";
 import React, { useEffect, useRef, useState } from "react";
 import { FlatList, Platform, TouchableOpacity, View } from "react-native";
-import * as ScopedStorage from "react-native-scoped-storage";
 import RNFetchBlob from "react-native-blob-util";
-import Storage from "../../common/database/storage";
+import * as ScopedStorage from "react-native-scoped-storage";
+import filesystem from "../../common/filesystem";
 import { presentDialog } from "../../components/dialog/functions";
 import { IconButton } from "../../components/ui/icon-button";
 import { Notice } from "../../components/ui/notice";
 import Paragraph from "../../components/ui/typography/paragraph";
 import useTimer from "../../hooks/use-timer";
-import { ToastEvent } from "../../services/event-manager";
-import { useThemeColors } from "@notesnook/theme";
+import { ToastManager } from "../../services/event-manager";
 import { hexToRGBA } from "../../utils/colors";
-import { sanitizeFilename } from "@notesnook/common";
 
 export default function DebugLogs() {
   const { colors } = useThemeColors();
@@ -88,8 +89,8 @@ export default function DebugLogs() {
           activeOpacity={1}
           onLongPress={() => {
             Clipboard.setString(format(item));
-            ToastEvent.show({
-              heading: "Debug log copied!",
+            ToastManager.show({
+              heading: strings.logsCopied(),
               context: "global",
               type: "success"
             });
@@ -100,7 +101,7 @@ export default function DebugLogs() {
             backgroundColor: background,
             flexShrink: 1,
             borderBottomWidth: 1,
-            borderBottomColor: colors.secondary.background
+            borderBottomColor: colors.primary.border
           }}
         >
           <Paragraph
@@ -122,7 +123,8 @@ export default function DebugLogs() {
       colors.primary.paragraph,
       colors.error.paragraph,
       colors.static.black,
-      colors.static.orange
+      colors.static.orange,
+      colors.primary.border
     ]
   );
 
@@ -146,21 +148,19 @@ export default function DebugLogs() {
         if (!file) return;
         path = file.uri;
       } else {
-        path = await Storage.checkAndCreateDir("/");
+        path = await filesystem.checkAndCreateDir("/");
         await RNFetchBlob.fs.writeFile(path + fileName + ".txt", data, "utf8");
         path = path + fileName;
       }
 
       if (path) {
-        ToastEvent.show({
-          heading: "Debug logs downloaded",
+        ToastManager.show({
+          heading: strings.logsDownloaded(),
           context: "global",
           type: "success"
         });
       }
-    } catch (e) {
-      console.log(e);
-    }
+    } catch (e) {}
   }, [currentLog?.logs]);
 
   const copyLogs = React.useCallback(() => {
@@ -171,8 +171,8 @@ export default function DebugLogs() {
       .join("\n");
     if (!data) return;
     Clipboard.setString(data);
-    ToastEvent.show({
-      heading: "Debug log copied!",
+    ToastManager.show({
+      heading: strings.logsCopied(),
       context: "global",
       type: "success"
     });
@@ -181,10 +181,10 @@ export default function DebugLogs() {
   const clearLogs = React.useCallback(() => {
     if (!currentLog) return;
     presentDialog({
-      title: "Clear logs",
-      paragraph: `Are you sure you want to delete all logs from ${currentLog.key}?`,
-      negativeText: "Cancel",
-      positiveText: "Clear",
+      title: strings.clearLogs(),
+      paragraph: strings.clearLogsConfirmation(currentLog.key),
+      negativeText: strings.cancel(),
+      positiveText: strings.clear(),
       positivePress: () => {
         const index = logs.findIndex((l) => (l.key = currentLog.key));
         logManager?.delete(currentLog.key);
@@ -212,10 +212,7 @@ export default function DebugLogs() {
           padding: 12
         }}
       >
-        <Notice
-          text="All logs are local only and are not sent to any server. You can share the logs from here with us if you face an issue to help us find the root cause."
-          type="information"
-        />
+        <Notice text={strings.debugNotice()} type="information" />
       </View>
 
       {currentLog && (
@@ -241,7 +238,7 @@ export default function DebugLogs() {
                 <Paragraph>{currentLog.key}</Paragraph>
 
                 <IconButton
-                  customStyle={{
+                  style={{
                     width: 30,
                     height: 30,
                     marginHorizontal: 5
@@ -259,7 +256,7 @@ export default function DebugLogs() {
                 />
 
                 <IconButton
-                  customStyle={{
+                  style={{
                     width: 30,
                     height: 30
                   }}
@@ -284,7 +281,7 @@ export default function DebugLogs() {
                 <IconButton
                   onPress={copyLogs}
                   size={20}
-                  customStyle={{
+                  style={{
                     width: 30,
                     height: 30,
                     marginRight: 5
@@ -294,7 +291,7 @@ export default function DebugLogs() {
                 />
                 <IconButton
                   onPress={downloadLogs}
-                  customStyle={{
+                  style={{
                     width: 30,
                     height: 30,
                     marginRight: 5
@@ -306,7 +303,7 @@ export default function DebugLogs() {
 
                 <IconButton
                   onPress={clearLogs}
-                  customStyle={{
+                  style={{
                     width: 30,
                     height: 30,
                     marginRight: 5

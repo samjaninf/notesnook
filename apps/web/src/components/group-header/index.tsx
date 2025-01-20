@@ -28,7 +28,8 @@ import {
   SortDesc,
   DetailedView,
   CompactView,
-  Icon
+  Icon,
+  Loading
 } from "../icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Flex, Text } from "@theme-ui/components";
@@ -38,6 +39,12 @@ import { useStore as useNoteStore } from "../../stores/note-store";
 import { useStore as useNotebookStore } from "../../stores/notebook-store";
 import useMobile from "../../hooks/use-mobile";
 import { MenuButtonItem, MenuItem } from "@notesnook/ui";
+import {
+  GroupHeader as GroupHeaderType,
+  GroupOptions,
+  GroupingKey
+} from "@notesnook/core";
+import { strings } from "@notesnook/intl";
 
 const groupByToTitleMap = {
   none: "None",
@@ -53,30 +60,34 @@ type GroupingMenuOptions = {
   parentKey: keyof GroupOptions;
   groupingKey: GroupingKey;
   refresh: () => void;
-  isUngrouped: boolean;
 };
 
-const groupByMenu: (options: GroupingMenuOptions) => MenuItem = (options) => ({
-  type: "button",
-  key: "groupBy",
-  title: "Group by",
-  icon: GroupBy.path,
-  menu: {
-    items: map(options, [
-      { key: "none", title: "None" },
-      { key: "default", title: "Default" },
-      { key: "year", title: "Year" },
-      { key: "month", title: "Month" },
-      { key: "week", title: "Week" },
-      { key: "abc", title: "A - Z" }
-    ])
-  }
-});
+const groupByMenu: (options: GroupingMenuOptions) => MenuItem | null = (
+  options
+) =>
+  options.groupingKey === "reminders"
+    ? null
+    : {
+        type: "button",
+        key: "groupBy",
+        title: strings.groupBy(),
+        icon: GroupBy.path,
+        menu: {
+          items: map(options, [
+            { key: "none", title: strings.groupByStrings.none() },
+            { key: "default", title: strings.groupByStrings.default() },
+            { key: "year", title: strings.groupByStrings.year() },
+            { key: "month", title: strings.groupByStrings.month() },
+            { key: "week", title: strings.groupByStrings.week() },
+            { key: "abc", title: strings.groupByStrings.abc() }
+          ])
+        }
+      };
 
 const orderByMenu: (options: GroupingMenuOptions) => MenuItem = (options) => ({
   type: "button",
   key: "sortDirection",
-  title: "Order by",
+  title: strings.orderBy(),
   icon:
     options.groupOptions.sortDirection === "asc"
       ? options.groupOptions.sortBy === "title"
@@ -90,12 +101,20 @@ const orderByMenu: (options: GroupingMenuOptions) => MenuItem = (options) => ({
       {
         key: "asc",
         title:
-          options.groupOptions.sortBy === "title" ? "A - Z" : "Oldest - newest"
+          options.groupOptions.sortBy === "title"
+            ? strings.aToZ()
+            : options.groupOptions.sortBy === "dueDate"
+            ? strings.earliestFirst()
+            : strings.oldestToNewest()
       },
       {
         key: "desc",
         title:
-          options.groupOptions.sortBy === "title" ? "Z - A" : "Newest - oldest"
+          options.groupOptions.sortBy === "title"
+            ? strings.zToA()
+            : options.groupOptions.sortBy === "dueDate"
+            ? strings.latestFirst()
+            : strings.newestToOldest()
       }
     ])
   }
@@ -104,53 +123,51 @@ const orderByMenu: (options: GroupingMenuOptions) => MenuItem = (options) => ({
 const sortByMenu: (options: GroupingMenuOptions) => MenuItem = (options) => ({
   type: "button",
   key: "sortBy",
-  title: "Sort by",
+  title: strings.sortBy(),
   icon: SortBy.path,
   menu: {
     items: map(options, [
       {
         key: "dateCreated",
-        title: "Date created",
-        isHidden:
-          options.groupingKey === "trash" || options.groupingKey === "tags"
+        title: strings.sortByStrings.dateCreated(),
+        isHidden: options.groupingKey === "trash"
       },
       {
         key: "dateEdited",
-        title: "Date edited",
+        title: strings.sortByStrings.dateEdited(),
         isHidden:
           options.groupingKey === "trash" || options.groupingKey === "tags"
       },
       {
         key: "dateDeleted",
-        title: "Date deleted",
+        title: strings.sortByStrings.dateDeleted(),
         isHidden: options.groupingKey !== "trash"
       },
       {
         key: "dateModified",
-        title: "Date modified",
+        title: strings.sortByStrings.dateModified(),
         isHidden: options.groupingKey !== "tags"
       },
       {
+        key: "dueDate",
+        title: strings.sortByStrings.dueDate(),
+        isHidden: options.groupingKey !== "reminders"
+      },
+      {
         key: "title",
-        title: "Title",
-        isHidden:
-          !options.isUngrouped &&
-          options.parentKey === "sortBy" &&
-          options.groupOptions.groupBy !== "abc" &&
-          options.groupOptions.groupBy !== "none"
+        title: strings.sortByStrings.title()
       }
     ])
   }
 });
 
 export function showSortMenu(groupingKey: GroupingKey, refresh: () => void) {
-  const groupOptions = db.settings?.getGroupOptions(groupingKey);
+  const groupOptions = db.settings.getGroupOptions(groupingKey);
   if (!groupOptions) return;
 
   const menuOptions: Omit<GroupingMenuOptions, "parentKey"> = {
     groupingKey,
     groupOptions,
-    isUngrouped: true,
     refresh
   };
 
@@ -160,12 +177,12 @@ export function showSortMenu(groupingKey: GroupingKey, refresh: () => void) {
       sortByMenu({ ...menuOptions, parentKey: "sortBy" })
     ],
     {
-      title: "Sort"
+      title: strings.sort()
     }
   );
 }
 
-function changeGroupOptions(
+async function changeGroupOptions(
   options: GroupingMenuOptions,
   item: Omit<MenuButtonItem, "type">
 ) {
@@ -175,10 +192,12 @@ function changeGroupOptions(
   (groupOptions as any)[options.parentKey] = item.key;
 
   if (options.parentKey === "groupBy") {
-    if (item.key === "abc") groupOptions.sortBy = "title";
-    else groupOptions.sortBy = "dateEdited";
+    groupOptions.sortBy =
+      options.groupingKey === "tags" || options.groupingKey === "trash"
+        ? "dateModified"
+        : groupOptions.sortBy;
   }
-  db.settings?.setGroupOptions(options.groupingKey, groupOptions);
+  await db.settings.setGroupOptions(options.groupingKey, groupOptions);
   options.refresh();
 }
 
@@ -198,8 +217,8 @@ type GroupHeaderProps = {
   groupingKey: GroupingKey;
   index: number;
 
-  groups: { title: string }[];
-  onJump: (title: string) => void;
+  groups: () => Promise<{ index: number; group: GroupHeaderType }[]>;
+  onJump: (index: number) => void;
   refresh: () => void;
   onSelectGroup: () => void;
   isFocused: boolean;
@@ -216,7 +235,7 @@ function GroupHeader(props: GroupHeaderProps) {
     isFocused
   } = props;
   const [groupOptions, setGroupOptions] = useState(
-    db.settings!.getGroupOptions(groupingKey)
+    db.settings.getGroupOptions(groupingKey)
   );
   const groupHeaderRef = useRef<HTMLDivElement>(null);
   const { openMenu, target } = useMenuTrigger();
@@ -256,20 +275,31 @@ function GroupHeader(props: GroupHeaderProps) {
           onSelectGroup();
           return;
         }
-        if (groups.length <= 0) return;
         e.stopPropagation();
-        const items: MenuItem[] = groups.map((group) => {
-          const groupTitle = group.title.toString();
-          return {
-            type: "button",
-            key: groupTitle,
-            title: groupTitle,
-            onClick: () => onJump(groupTitle),
-            checked: group.title === title
-          };
-        });
+
+        const items: MenuItem[] = [
+          {
+            key: "groups",
+            type: "lazy-loader",
+            loader: <Loading sx={{ my: 2 }} />,
+            async items() {
+              const items = await groups();
+              return items.map(({ group, index }) => {
+                const groupTitle = group.title.toString();
+                return {
+                  type: "button",
+                  key: groupTitle,
+                  title: groupTitle,
+                  onClick: () => onJump(index),
+                  checked: group.title === title
+                } as MenuItem;
+              });
+            }
+          }
+        ];
+
         openMenu(items, {
-          title: "Jump to group",
+          title: strings.jumpToGroup(),
           position: {
             target: groupHeaderRef.current,
             align: "start",
@@ -328,29 +358,28 @@ function GroupHeader(props: GroupHeaderProps) {
                 const menuOptions: Omit<GroupingMenuOptions, "parentKey"> = {
                   groupingKey,
                   groupOptions,
-                  isUngrouped: false,
                   refresh
                 };
+                const groupBy = groupByMenu({
+                  ...menuOptions,
+                  parentKey: "groupBy"
+                });
 
-                openMenu(
-                  [
-                    orderByMenu({
-                      ...menuOptions,
-                      parentKey: "sortDirection"
-                    }),
-                    sortByMenu({
-                      ...menuOptions,
-                      parentKey: "sortBy"
-                    }),
-                    groupByMenu({
-                      ...menuOptions,
-                      parentKey: "groupBy"
-                    })
-                  ],
-                  {
-                    title: "Group & sort"
-                  }
-                );
+                const menuItems = [
+                  orderByMenu({
+                    ...menuOptions,
+                    parentKey: "sortDirection"
+                  }),
+                  sortByMenu({
+                    ...menuOptions,
+                    parentKey: "sortBy"
+                  })
+                ];
+                if (groupBy) menuItems.push(groupBy);
+
+                openMenu(menuItems, {
+                  title: groupBy ? "Group & sort" : "Sort"
+                });
               }}
             />
           )}
