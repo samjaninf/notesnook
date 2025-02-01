@@ -18,18 +18,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Button, Flex, Text } from "@theme-ui/components";
-import { Context, useTip } from "../../hooks/use-tip";
+import { TipContext, useTip } from "../../hooks/use-tip";
 import { Info, Sync } from "../icons";
 import { useStore as useAppStore } from "../../stores/app-store";
-import { toTitleCase } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
 
-type PlaceholderProps = { context: Context; text?: string };
+type PlaceholderProps = { context: TipContext; text?: string };
 function Placeholder(props: PlaceholderProps) {
   const { context, text } = props;
   const tip = useTip(context);
   const syncStatus = useAppStore((store) => store.syncStatus);
+  const isFirstSync = useAppStore((store) => store.lastSynced === 0);
 
-  if (syncStatus.key === "syncing" && context === "notes") {
+  if (isFirstSync && syncStatus.key === "syncing" && context === "notes") {
     return (
       <Flex
         variant="columnCenter"
@@ -52,13 +53,13 @@ function Placeholder(props: PlaceholderProps) {
         >
           <Sync color="accent" size={12} sx={{ mr: "small" }} />
           <Text variant="subBody" sx={{ fontSize: 10 }} color="accent">
-            Syncing your {context}
+            {strings.syncingYourNotes()}
           </Text>
         </Flex>
 
         <Text variant="subBody" sx={{ fontSize: "body", mt: 1 }}>
-          {toTitleCase(syncStatus.type || "syncing")}ing {syncStatus.progress}{" "}
-          items
+          {strings.networkProgress(syncStatus.type || "sync")}{" "}
+          {syncStatus.progress} {strings.items()}
         </Text>
       </Flex>
     );
@@ -87,7 +88,7 @@ function Placeholder(props: PlaceholderProps) {
         >
           <Info color="accent" size={13} sx={{ mr: "small" }} />
           <Text variant="subBody" sx={{ fontSize: 10 }} color="accent">
-            TIP
+            {strings.tip()}
           </Text>
         </Flex>
         <Text variant="subBody" sx={{ fontSize: "body", mt: 1 }}>

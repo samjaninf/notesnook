@@ -52,6 +52,10 @@ const directoryTree = {
       "package.json": ["packages", "sodium", "package.json"],
       "package-lock.json": ["packages", "sodium", "package-lock.json"]
     },
+    intl: {
+      "package.json": ["packages", "intl", "package.json"],
+      "package-lock.json": ["packages", "intl", "package-lock.json"]
+    },
     crypto: {
       "package.json": ["packages", "crypto", "package.json"],
       "package-lock.json": ["packages", "crypto", "package-lock.json"]
@@ -100,6 +104,10 @@ const lockfiles = [
     path: path.join(TEMP_FOLDER, "apps", "desktop", "package-lock.json")
   },
   {
+    name: "intl",
+    path: path.join(TEMP_FOLDER, "packages", "intl", "package-lock.json")
+  },
+  {
     name: "sodium",
     path: path.join(TEMP_FOLDER, "packages", "sodium", "package-lock.json")
   },
@@ -124,6 +132,7 @@ for (const lockfile of lockfiles) {
   execute(
     `flatpak-node-generator`,
     [
+      lockfile.name === "desktop" ? "--electron-node-headers" : false,
       lockfile.ignoreDev ? "--no-devel" : false,
       "npm",
       lockfile.path,

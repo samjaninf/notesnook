@@ -41,7 +41,10 @@ function setTheme(theme: Theme) {
 }
 
 function getBackgroundColor() {
-  return nativeTheme.shouldUseDarkColors ? "#0f0f0f" : "#ffffff";
+  return (
+    config.backgroundColor ||
+    (nativeTheme.shouldUseDarkColors ? "#0f0f0f" : "#ffffff")
+  );
 }
 
 function getSystemTheme() {
@@ -54,7 +57,8 @@ function getSystemTheme() {
   nativeTheme.themeSource = oldThemeSource;
 
   setTimeout(
-    () => listeners.forEach((a) => nativeTheme.addListener("updated", a)),
+    () =>
+      listeners.forEach((a) => nativeTheme.addListener("updated", () => a())),
     1000
   );
   return currentTheme;
@@ -69,7 +73,8 @@ function changeTheme(theme: Theme) {
   nativeTheme.themeSource = theme;
 
   setTimeout(
-    () => listeners.forEach((a) => nativeTheme.addListener("updated", a)),
+    () =>
+      listeners.forEach((a) => nativeTheme.addListener("updated", () => a())),
     1000
   );
 }

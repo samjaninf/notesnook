@@ -26,7 +26,9 @@ import type { Config } from "@notesnook/clipper/dist/types";
 
 export const SETTINGS_KEY = "settings";
 export const DEFAULT_SETTINGS: Config = {
-  corsProxy: "https://cors.notesnook.com"
+  corsProxy: "https://cors.notesnook.com",
+  images: true,
+  inlineImages: true
 };
 
 export function Settings() {
@@ -91,7 +93,7 @@ export function Settings() {
           sx={{ p: 1, py: "7px", mt: 1 }}
         />
       </Label>
-      <Button type="submit" sx={{ mt: 2 }}>
+      <Button variant="accent" type="submit" sx={{ mt: 2 }}>
         Save
       </Button>
     </Flex>

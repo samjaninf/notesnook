@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions, TextInput, View } from "react-native";
 import {
   addOrientationListener,
@@ -44,6 +44,8 @@ import { ProgressBarComponent } from "../../ui/svg/lazy";
 import Paragraph from "../../ui/typography/paragraph";
 import { sleep } from "../../../utils/time";
 import { MMKV } from "../../../common/database/mmkv";
+import { deleteCacheFileByPath } from "../../../common/filesystem/io";
+import { strings } from "@notesnook/intl";
 
 const WIN_WIDTH = Dimensions.get("window").width;
 const WIN_HEIGHT = Dimensions.get("window").height;
@@ -85,7 +87,7 @@ const PDFPreview = () => {
     return () => {
       eUnSubscribeEvent("PDFPreview", open);
     };
-  }, []);
+  }, [open]);
 
   const onOrientationChange = (o) => {
     if (o.includes("LANDSCAPE")) {
@@ -102,25 +104,29 @@ const PDFPreview = () => {
     };
   }, []);
 
-  const open = async (attachment) => {
-    setVisible(true);
-    setLoading(true);
-    setTimeout(async () => {
-      setAttachment(attachment);
-      let hash = attachment.metadata.hash;
-      if (!hash) return;
-      const uri = await downloadAttachment(hash, false, {
-        silent: true,
-        cache: true
-      });
-      const path = `${cacheDir}/${uri}`;
-      snapshotValue.current = snapshot.current;
-      setPDFSource("file://" + path);
-      setLoading(false);
-    }, 100);
-  };
+  const open = useCallback(
+    async (attachment) => {
+      setVisible(true);
+      setLoading(true);
+      setTimeout(async () => {
+        setAttachment(attachment);
+        let hash = attachment.hash;
+        if (!hash) return;
+        const uri = await downloadAttachment(hash, false, {
+          silent: true,
+          cache: true
+        });
+        const path = `${cacheDir}/${uri}`;
+        snapshotValue.current = snapshot.current;
+        setPDFSource("file://" + path);
+        setLoading(false);
+      }, 100);
+    },
+    [snapshot]
+  );
 
   const close = () => {
+    deleteCacheFileByPath(pdfSource);
     setPDFSource(null);
     setVisible(false);
     setPassword("");
@@ -130,12 +136,12 @@ const PDFPreview = () => {
     if (error?.message === "Password required or incorrect password.") {
       await sleep(300);
       presentDialog({
-        context: attachment?.metadata?.hash,
+        context: attachment?.hash,
         input: true,
-        inputPlaceholder: "Enter password",
-        positiveText: "Unlock",
-        title: "Decrypt",
-        paragraph: "Please input password to view pdf.",
+        inputPlaceholder: strings.enterPassword(),
+        positiveText: strings.open(),
+        title: strings.pdfLocked(),
+        paragraph: strings.pdfLockedDesc(),
         positivePress: (value) => {
           setTimeout(() => {
             setPassword(value);
@@ -151,8 +157,8 @@ const PDFPreview = () => {
   return (
     visible && (
       <BaseDialog animation="fade" visible={true} onRequestClose={close}>
-        <SheetProvider context={attachment?.metadata?.hash} />
-        <Dialog context={attachment?.metadata?.hash} />
+        <SheetProvider context={attachment?.hash} />
+        <Dialog context={attachment?.hash} />
 
         <View
           style={{
@@ -182,8 +188,7 @@ const PDFPreview = () => {
                 }}
                 color={colors.static.white}
               >
-                Loading {`${progress?.percent ? `(${progress?.percent})` : ""}`}
-                ... Please wait
+                {strings.loadingWithProgress(progress?.percent)}
               </Paragraph>
             </Animated.View>
           ) : (
@@ -208,7 +213,7 @@ const PDFPreview = () => {
                     color={colors.static.white}
                     name="arrow-left"
                     onPress={close}
-                    customStyle={{
+                    style={{
                       marginRight: 12
                     }}
                     size={SIZE.xxl}
@@ -261,7 +266,7 @@ const PDFPreview = () => {
                     color={colors.static.white}
                     name="download"
                     onPress={() => {
-                      downloadAttachment(attachment.metadata.hash, false);
+                      downloadAttachment(attachment.hash, false);
                     }}
                   />
                 </View>
@@ -302,9 +307,7 @@ const PDFPreview = () => {
                     password={password}
                     maxScale={6}
                     onError={onError}
-                    onPressLink={(uri) => {
-                      console.log(`Link pressed: ${uri}`);
-                    }}
+                    onPressLink={(uri) => {}}
                     style={{
                       flex: 1,
                       width: width,

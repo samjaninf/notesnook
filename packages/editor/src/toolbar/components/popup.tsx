@@ -17,12 +17,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Button, Flex, Text } from "@theme-ui/components";
-import { Icon } from "@notesnook/ui";
-import { Icons } from "../icons";
-import { PropsWithChildren } from "react";
-import { DesktopOnly, MobileOnly } from "../../components/responsive";
 import { EmotionThemeProvider } from "@notesnook/theme";
+import { Icon } from "@notesnook/ui";
+import { Button, Flex, Text } from "@theme-ui/components";
+import { PropsWithChildren } from "react";
+import { DesktopOnly, MobileOnly } from "../../components/responsive/index.js";
+import { Icons } from "../icons.js";
 
 type Action = {
   title: string;
@@ -33,11 +33,13 @@ type Action = {
 export type PopupProps = {
   title?: string;
   onClose?: () => void;
+  onPin?: () => void;
+  isPinned?: boolean;
   action?: Action;
 };
 
 export function Popup(props: PropsWithChildren<PopupProps>) {
-  const { title, onClose, action, children } = props;
+  const { title, onClose, onPin, isPinned, action, children } = props;
 
   return (
     <EmotionThemeProvider scope="editorToolbar">
@@ -63,13 +65,30 @@ export function Popup(props: PropsWithChildren<PopupProps>) {
               }}
             >
               <Text variant={"title"}>{title}</Text>
-              <Button
-                variant={"secondary"}
-                sx={{ p: 0, bg: "transparent" }}
-                onClick={onClose}
-              >
-                <Icon path={Icons.close} size={"big"} />
-              </Button>
+              <Flex sx={{ alignItems: "center", gap: 1 }}>
+                {onPin ? (
+                  <Button
+                    variant={"secondary"}
+                    sx={{ p: 0, bg: "transparent" }}
+                    onClick={onPin}
+                  >
+                    <Icon
+                      path={Icons.pin}
+                      size={"medium"}
+                      color={isPinned ? "accent" : "icon"}
+                    />
+                  </Button>
+                ) : null}
+                {onClose ? (
+                  <Button
+                    variant={"secondary"}
+                    sx={{ p: 0, bg: "transparent" }}
+                    onClick={onClose}
+                  >
+                    <Icon path={Icons.close} size={"big"} />
+                  </Button>
+                ) : null}
+              </Flex>
             </Flex>
           )}
           {children}

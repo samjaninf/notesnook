@@ -21,8 +21,15 @@ import { Locator, Page } from "@playwright/test";
 import { downloadAndReadFile, getTestId } from "../utils";
 import { ContextMenuModel } from "./context-menu.model";
 import { ToggleModel } from "./toggle.model";
-import { Notebook } from "./types";
-import { fillPasswordDialog, iterateList } from "./utils";
+import { Color, Notebook } from "./types";
+import {
+  confirmDialog,
+  fillColorDialog,
+  fillNotebookDialog,
+  fillPasswordDialog,
+  iterateList
+} from "./utils";
+import { SessionHistoryItemModel } from "./session-history-item-model";
 
 abstract class BaseProperties {
   protected readonly page: Page;
@@ -85,12 +92,12 @@ abstract class BaseProperties {
     return (
       (await this.noteLocator.locator(getTestId("locked")).isVisible()) &&
       (await this.noteLocator.locator(getTestId(`description`)).isHidden()) &&
-      (await (async () => {
-        await this.noteLocator.click();
-        return await this.page
-          .locator(getTestId("unlock-note-title"))
-          .isVisible();
-      })()) &&
+      // (await (async () => {
+      //   await this.noteLocator.click();
+      //   return await this.page
+      //     .locator(getTestId("unlock-note-title"))
+      //     .isVisible();
+      // })()) &&
       (await (async () => {
         await this.open();
         const state = await this.lockToggle.isToggled();
@@ -204,6 +211,11 @@ export class NoteContextMenuModel extends BaseProperties {
     this.menu = new ContextMenuModel(page);
   }
 
+  async openInNewTab() {
+    await this.open();
+    await this.menu.clickOnItem("openinnewtab");
+  }
+
   async isColored(color: string): Promise<boolean> {
     await this.open();
     await this.menu.clickOnItem("colors");
@@ -222,6 +234,20 @@ export class NoteContextMenuModel extends BaseProperties {
     await this.close();
   }
 
+  async uncolor(color: string) {
+    await this.open();
+    await this.menu.clickOnItem("colors");
+    await new ToggleModel(this.page, `menu-button-${color}`).off();
+    await this.close();
+  }
+
+  async newColor(color: Color) {
+    await this.open();
+    await this.menu.clickOnItem("colors");
+    await new ToggleModel(this.page, `menu-button-new-color`).on();
+    await fillColorDialog(this.page, color);
+  }
+
   async moveToTrash() {
     await this.open();
     await Promise.all([
@@ -234,65 +260,75 @@ export class NoteContextMenuModel extends BaseProperties {
     await this.open();
     await this.menu.clickOnItem("export");
 
-    const content = await downloadAndReadFile(
+    const content = (await downloadAndReadFile(
       this.noteLocator.page(),
-      this.menu.getItem(format),
+      () => this.menu.getItem(format).click(),
       "utf-8"
-    );
+    )) as string;
+
     if (format === "html") {
       return content
-        .replace(/(name="created-on" content=")(.+?)"/, '$1xxx"')
-        .replace(/(name="last-edited-on" content=")(.+?)"/, '$1xxx"');
+        .replace(/(name="created-at" content=")(.+?)"/, '$1xxx"')
+        .replace(/(name="updated-at" content=")(.+?)"/, '$1xxx"')
+        .replace(/(data-block-id=")(.+?)"/gm, '$1xxx"');
     }
     return content;
   }
 
   async addToNotebook(notebook: Notebook) {
+    async function addSubNotebooks(
+      page: Page,
+      dialog: Locator,
+      item: Locator,
+      notebook: Notebook
+    ) {
+      if (notebook.subNotebooks) {
+        const addSubNotebookButton = item.locator(
+          getTestId("add-sub-notebook")
+        );
+        for (const subNotebook of notebook.subNotebooks) {
+          await addSubNotebookButton.click();
+
+          await fillNotebookDialog(page, subNotebook);
+
+          const subNotebookItem = dialog.locator(getTestId("notebook"), {
+            hasText: subNotebook.title
+          });
+          await subNotebookItem.waitFor();
+
+          await page.keyboard.down("ControlOrMeta");
+          await subNotebookItem.click();
+          await page.keyboard.up("ControlOrMeta");
+
+          await addSubNotebooks(page, dialog, subNotebookItem, subNotebook);
+        }
+      }
+    }
+
     await this.open();
 
     await this.menu.clickOnItem("notebooks");
     await this.menu.clickOnItem("link-notebooks");
 
-    const filterInput = this.page.locator(getTestId("filter-input"));
-    await filterInput.type(notebook.title);
-    await filterInput.press("Enter");
+    const dialog = this.page.locator(getTestId("move-note-dialog"));
 
-    await this.page.waitForSelector(getTestId("notebook"), {
-      state: "visible",
-      strict: false
+    await dialog.locator(getTestId("add-new-notebook")).click();
+
+    await fillNotebookDialog(this.page, notebook);
+
+    const notebookItem = dialog.locator(getTestId("notebook"), {
+      hasText: notebook.title
     });
 
-    const notebookItems = this.page.locator(getTestId("notebook"));
-    for await (const item of iterateList(notebookItems)) {
-      await item.locator(getTestId("notebook-tools")).click();
-      const title = item.locator(getTestId("notebook-title"));
-      const createTopicButton = item.locator(getTestId("create-topic"));
-      const notebookTitle = await title.textContent();
+    await notebookItem.waitFor({ state: "visible" });
 
-      if (notebookTitle?.includes(notebook.title)) {
-        for (const topic of notebook.topics) {
-          await createTopicButton.click();
-          const newItemInput = item.locator(getTestId("new-topic-input"));
+    await this.page.keyboard.down("ControlOrMeta");
+    await notebookItem.click();
+    await this.page.keyboard.up("ControlOrMeta");
 
-          await newItemInput.waitFor({ state: "visible" });
-          await newItemInput.fill(topic);
-          await newItemInput.press("Enter");
+    await addSubNotebooks(this.page, dialog, notebookItem, notebook);
 
-          await item.locator(getTestId("topic"), { hasText: topic }).waitFor();
-        }
-
-        const topicItems = item.locator(getTestId("topic"));
-        for await (const topicItem of iterateList(topicItems)) {
-          await this.page.keyboard.down("Control");
-          await topicItem.click();
-          await this.page.keyboard.up("Control");
-        }
-      }
-    }
-
-    const dialogConfirm = this.page.locator(getTestId("dialog-yes"));
-    await dialogConfirm.click();
-    await dialogConfirm.waitFor({ state: "detached" });
+    await confirmDialog(dialog);
   }
 
   async open() {
@@ -305,42 +341,5 @@ export class NoteContextMenuModel extends BaseProperties {
 
   title() {
     return this.menu.title();
-  }
-}
-
-class SessionHistoryItemModel {
-  private readonly title: Locator;
-  private readonly page: Page;
-  private readonly previewNotice: Locator;
-  private readonly locked: Locator;
-  constructor(
-    private readonly properties: NotePropertiesModel,
-    private readonly locator: Locator
-  ) {
-    this.page = locator.page();
-    this.title = locator.locator(getTestId("title"));
-    this.previewNotice = this.page.locator(getTestId("preview-notice"));
-    this.locked = locator.locator(getTestId("locked"));
-  }
-
-  async getTitle() {
-    return await this.title.textContent();
-  }
-
-  async preview(password?: string) {
-    await this.properties.open();
-    const isLocked = await this.locked.isVisible();
-    await this.locator.click();
-    if (password && isLocked) {
-      await fillPasswordDialog(this.page, password);
-    }
-    await this.previewNotice.waitFor();
-  }
-
-  async isLocked() {
-    await this.properties.open();
-    const state = await this.locked.isVisible();
-    await this.properties.close();
-    return state;
   }
 }

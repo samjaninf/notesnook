@@ -18,15 +18,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useMemo } from "react";
-import { Box, Flex, Image, Link, Text } from "@theme-ui/components";
-import Logo from "../../assets/logo.svg";
-import LogoDark from "../../assets/logo-dark.svg";
-import { useStore as useThemeStore } from "../../stores/theme-store";
-import { getRandom } from "@notesnook/common";
+import { Box, Button, Flex, Image, Link, Text } from "@theme-ui/components";
+import { getRandom, usePromise } from "@notesnook/common";
 import Grberk from "../../assets/testimonials/grberk.jpeg";
 import Holenstein from "../../assets/testimonials/holenstein.jpg";
 import Jason from "../../assets/testimonials/jason.jpg";
 import Cameron from "../../assets/testimonials/cameron.jpg";
+import { hosts } from "@notesnook/core";
+import { SettingsDialog } from "../../dialogs/settings";
+import { strings } from "@notesnook/intl";
 
 const testimonials = [
   {
@@ -59,26 +59,26 @@ const testimonials = [
   }
 ];
 
-const titles = [
-  "Write with freedom.",
-  "Privacy comes first.",
-  "Take notes privately.",
-  "Encrypted, private, secure.",
-  "❤️ = 🔒 + 🗒️"
-];
-
 function randomTestimonial() {
   return testimonials[getRandom(0, testimonials.length - 1)];
 }
 
 function randomTitle() {
-  return titles[getRandom(0, titles.length - 1)];
+  return strings.webAuthTitles[
+    getRandom(0, strings.webAuthTitles.length - 1)
+  ]();
 }
 
 function AuthContainer(props) {
-  const colorScheme = useThemeStore((store) => store.colorScheme);
   const testimonial = useMemo(() => randomTestimonial(), []);
   const title = useMemo(() => randomTitle(), []);
+
+  const version = usePromise(
+    async () =>
+      await fetch(`${hosts.API_HOST}/version`)
+        .then((r) => r.json())
+        .catch(() => undefined)
+  );
 
   return (
     <Flex
@@ -154,15 +154,19 @@ function AuthContainer(props) {
             justifyContent: "end"
           }}
         >
-          <Image
-            src={colorScheme === "dark" ? LogoDark : Logo}
-            sx={{ borderRadius: "default", width: 70, alignSelf: "start" }}
-            mb={4}
-          />
+          <svg
+            style={{
+              height: 90,
+              width: 90,
+              alignSelf: "start",
+              marginBottom: 20
+            }}
+          >
+            <use href="#full-logo" />
+          </svg>
           <Text variant={"heading"} sx={{ fontSize: 48 }}>
             {title}
           </Text>
-
           <Text
             variant="body"
             mt={10}
@@ -171,10 +175,10 @@ function AuthContainer(props) {
             {testimonial.text} —{" "}
             <Link
               sx={{ fontStyle: "italic", color: "paragraph-secondary" }}
-              href={testimonial.link}  
+              href={testimonial.link}
               target="_blank"
               rel="noopener noreferrer"
-              >
+            >
               source
             </Link>
           </Text>
@@ -189,6 +193,37 @@ function AuthContainer(props) {
               </Text>
               <Text variant="subBody">@{testimonial.username}</Text>
             </Flex>
+          </Flex>
+
+          <Flex
+            mt={2}
+            pt={2}
+            sx={{
+              justifyContent: "space-between",
+              borderTop: "1px solid var(--border)",
+              width: "100%"
+            }}
+          >
+            <Text variant={"subBody"}>
+              {version.status === "fulfilled" &&
+              !!version.value &&
+              version.value.instance !== "default" ? (
+                <>
+                  {strings.usingInstance(
+                    version.value.instance,
+                    version.value.version
+                  )}
+                </>
+              ) : (
+                <>{strings.usingOfficialInstance()}</>
+              )}
+            </Text>
+            <Button
+              variant="anchor"
+              onClick={() => SettingsDialog.show({ activeSection: "servers" })}
+            >
+              {strings.configure()}
+            </Button>
           </Flex>
         </Flex>
       </Box>

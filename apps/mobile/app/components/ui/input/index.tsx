@@ -41,6 +41,7 @@ import { SIZE } from "../../../utils/size";
 import { IconButton } from "../icon-button";
 import Paragraph from "../typography/paragraph";
 import phone from "phone";
+import isURL from "validator/lib/isURL";
 
 interface InputProps extends TextInputProps {
   fwdRef?: RefObject<TextInput>;
@@ -49,7 +50,8 @@ interface InputProps extends TextInputProps {
     | "email"
     | "confirmPassword"
     | "username"
-    | "phonenumber";
+    | "phonenumber"
+    | "url";
   loading?: boolean;
   onSubmit?: (
     event: NativeSyntheticEvent<TextInputSubmitEditingEventData>
@@ -64,10 +66,10 @@ interface InputProps extends TextInputProps {
     color: ColorValue;
     onPress: () => void;
     testID?: string;
+    size?: number;
   };
   buttons?: React.ReactNode;
   onBlurInput?: () => void;
-  onPress?: () => void;
   height?: number;
   fontSize?: number;
   onFocusInput?: () => void;
@@ -149,6 +151,9 @@ const Input = ({
         break;
       case "confirmPassword":
         isError = customValidator && value === customValidator();
+        break;
+      case "url":
+        isError = isURL(value);
         break;
       case "phonenumber": {
         const result = phone(value, {

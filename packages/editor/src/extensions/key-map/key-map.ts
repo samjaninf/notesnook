@@ -19,8 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { Extension } from "@tiptap/core";
 import { isInTable } from "@tiptap/pm/tables";
-import { isListActive } from "../../utils/prosemirror";
-import { CodeBlock } from "../code-block";
+import { CodeBlock } from "../code-block/index.js";
+import { showLinkPopup } from "../../toolbar/popups/link-popup.js";
+import { isListActive } from "../../utils/list.js";
 
 export const KeyMap = Extension.create({
   name: "key-map",
@@ -49,6 +50,25 @@ export const KeyMap = Extension.create({
           .unsetAllMarks()
           .unsetMark("link")
           .run();
+        return true;
+      },
+      "Shift-Mod-L": ({ editor }) => {
+        editor.storage.createInternalLink?.().then((link) => {
+          if (!link) return;
+
+          const selectedText = editor.state.doc.textBetween(
+            editor.state.selection.from,
+            editor.state.selection.to
+          );
+          editor.commands.setLink({
+            ...link,
+            title: selectedText || link.title
+          });
+        });
+        return true;
+      },
+      "Mod-k": ({ editor }) => {
+        showLinkPopup(editor);
         return true;
       }
     };

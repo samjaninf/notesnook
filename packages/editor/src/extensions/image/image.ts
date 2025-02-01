@@ -18,15 +18,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Node, nodeInputRule, mergeAttributes } from "@tiptap/core";
-import { hasSameAttributes } from "../../utils/prosemirror";
+import { hasSameAttributes } from "../../utils/prosemirror.js";
 import {
   ImageAlignmentOptions,
   ImageAttachment,
   getDataAttribute
-} from "../attachment";
-import { createSelectionBasedNodeView } from "../react";
-import { TextDirections } from "../text-direction";
-import { ImageComponent } from "./component";
+} from "../attachment/index.js";
+import { createNodeView } from "../react/index.js";
+import { TextDirections } from "../text-direction/index.js";
+import { ImageComponent } from "./component.js";
 
 export interface ImageOptions {
   inline: boolean;
@@ -56,7 +56,7 @@ declare module "@tiptap/core" {
   }
 }
 
-export const inputRegex = /(!\[(.+|:?)]\((\S+)(?:(?:\s+)["'](\S+)["'])?\))$/;
+const inputRegex = /(!\[(.+|:?)]\((\S+)(?:(?:\s+)["'](\S+)["'])?\))$/;
 
 export const ImageNode = Node.create<ImageOptions>({
   name: "image",
@@ -136,7 +136,7 @@ export const ImageNode = Node.create<ImageOptions>({
   },
 
   addNodeView() {
-    return createSelectionBasedNodeView(ImageComponent, {
+    return createNodeView(ImageComponent, {
       componentKey: (node) => node.attrs.hash,
       shouldUpdate: (prev, next) => !hasSameAttributes(prev.attrs, next.attrs),
       forceEnableSelection: true
@@ -199,7 +199,8 @@ export const ImageNode = Node.create<ImageOptions>({
 
   addKeyboardShortcuts() {
     return {
-      "Mod-Shift-I": () => this.editor.commands.openAttachmentPicker("image")
+      "Mod-Shift-I": () =>
+        this.editor.storage.openAttachmentPicker?.("image") || true
     };
   }
 });

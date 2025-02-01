@@ -17,25 +17,29 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { useThemeColors } from "@notesnook/theme";
+import { useNetInfo } from "@react-native-community/netinfo";
 import React from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, Image, Platform, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import useGlobalSafeAreaInsets from "../../hooks/use-global-safe-area-insets";
 import useSyncProgress from "../../hooks/use-sync-progress";
 import { eSendEvent } from "../../services/event-manager";
+import Navigation from "../../services/navigation";
 import Sync from "../../services/sync";
-import { useThemeColors } from "@notesnook/theme";
+import { useThemeStore } from "../../stores/use-theme-store";
 import { SyncStatus, useUserStore } from "../../stores/use-user-store";
 import { eOpenLoginDialog } from "../../utils/events";
 import { tabBarRef } from "../../utils/global-refs";
 import { SIZE } from "../../utils/size";
-import { PressableButton } from "../ui/pressable";
+import { IconButton } from "../ui/icon-button";
+import { Pressable } from "../ui/pressable";
 import { TimeSince } from "../ui/time-since";
-import Heading from "../ui/typography/heading";
 import Paragraph from "../ui/typography/paragraph";
-import { useNetInfo } from "@react-native-community/netinfo";
+import { strings } from "@notesnook/intl";
+
 export const UserStatus = () => {
-  const { colors } = useThemeColors();
+  const { colors, isDark } = useThemeColors();
   const user = useUserStore((state) => state.user);
   const syncing = useUserStore((state) => state.syncing);
   const lastSyncStatus = useUserStore((state) => state.lastSyncStatus);
@@ -44,6 +48,8 @@ export const UserStatus = () => {
   const { isInternetReachable } = useNetInfo();
   const isOffline = !isInternetReachable;
   const { progress } = useSyncProgress();
+  const userProfile = useUserStore((state) => state.profile);
+
   return (
     <View
       style={{
@@ -51,7 +57,8 @@ export const UserStatus = () => {
         alignSelf: "center",
         paddingBottom: Platform.OS === "ios" ? insets.bottom / 2 : null,
         borderTopWidth: 1,
-        borderTopColor: colors.secondary.background
+        borderTopColor: colors.primary.border,
+        backgroundColor: colors.primary.background
       }}
     >
       <View
@@ -61,31 +68,60 @@ export const UserStatus = () => {
           alignItems: "center"
         }}
       >
-        <PressableButton
-          onPress={async () => {
-            if (user) {
-              Sync.run();
-            } else {
-              tabBarRef.current?.closeDrawer();
-              eSendEvent(eOpenLoginDialog);
-            }
+        <Pressable
+          onPress={() => {
+            Navigation.navigate("Settings");
+            tabBarRef.current.closeDrawer();
           }}
-          type="gray"
-          customStyle={{
+          type="plain"
+          style={{
             flexDirection: "row",
             justifyContent: "flex-start",
             padding: 12,
-            paddingHorizontal: 20,
-            borderRadius: 0
+            borderRadius: 0,
+            alignItems: "center",
+            gap: 10
           }}
         >
+          {userProfile?.profilePicture ? (
+            <Image
+              source={{
+                uri: userProfile?.profilePicture
+              }}
+              style={{
+                width: 35,
+                height: 35,
+                borderRadius: 100
+              }}
+            />
+          ) : (
+            <Icon
+              name="cog-outline"
+              size={SIZE.lg - 2}
+              color={colors.secondary.icon}
+              style={{
+                paddingLeft: 8
+              }}
+            />
+          )}
+
           <View
             style={{
               flexShrink: 1,
               flexGrow: 1
             }}
           >
-            <Heading
+            <Paragraph
+              numberOfLines={1}
+              size={SIZE.sm}
+              color={colors.primary.heading}
+            >
+              {!user || !userProfile?.fullName
+                ? strings.settings()
+                : userProfile.fullName}
+            </Paragraph>
+
+            <Paragraph
               style={{
                 flexWrap: "wrap"
               }}
@@ -93,26 +129,33 @@ export const UserStatus = () => {
               color={colors.secondary.heading}
             >
               {!user ? (
-                "You are not logged in"
+                strings.notLoggedIn()
               ) : lastSynced && lastSynced !== "Never" ? (
                 <>
-                  Synced{" "}
-                  <TimeSince
-                    style={{
-                      fontSize: SIZE.xs,
-                      color: colors.secondary.paragraph
-                    }}
-                    time={lastSynced}
-                    bold={true}
-                  />
-                  {isOffline ? " (offline)" : ""}
+                  {syncing
+                    ? `${strings.syncing()} ${
+                        progress ? `(${progress.current})` : ""
+                      }`
+                    : lastSyncStatus === SyncStatus.Failed
+                    ? strings.syncFailed()
+                    : strings.synced()}{" "}
+                  {!syncing ? (
+                    <TimeSince
+                      style={{
+                        fontSize: SIZE.xs,
+                        color: colors.secondary.paragraph
+                      }}
+                      time={lastSynced}
+                    />
+                  ) : null}
+                  {isOffline ? ` (${strings.offline()})` : ""}
                 </>
               ) : (
-                "never"
+                strings.never()
               )}{" "}
               <Icon
                 name="checkbox-blank-circle"
-                size={11}
+                size={9}
                 allowFontScaling
                 color={
                   !user || lastSyncStatus === SyncStatus.Failed
@@ -122,46 +165,84 @@ export const UserStatus = () => {
                     : colors.success.icon
                 }
               />
-            </Heading>
-
-            <Paragraph
-              style={{
-                flexWrap: "wrap"
-              }}
-              color={colors.primary.heading}
-            >
-              {!user
-                ? "Login to sync your notes."
-                : lastSyncStatus === SyncStatus.Failed
-                ? "Last sync failed, tap to try again"
-                : syncing
-                ? `Syncing your notes${
-                    progress ? ` (${progress.current})` : ""
-                  }`
-                : "Tap here to sync your notes."}
             </Paragraph>
           </View>
 
-          {user ? (
-            syncing ? (
-              <ActivityIndicator color={colors.primary.accent} size={SIZE.xl} />
-            ) : lastSyncStatus === SyncStatus.Failed ? (
-              <Icon
-                color={colors.error.icon}
-                name="sync-alert"
-                size={SIZE.lg}
-                allowFontScaling
-              />
-            ) : (
-              <Icon
-                allowFontScaling
-                color={colors.primary.accent}
-                name="sync"
-                size={SIZE.lg}
-              />
-            )
-          ) : null}
-        </PressableButton>
+          <View
+            style={{
+              flexDirection: "row",
+              gap: 0
+            }}
+          >
+            <IconButton
+              hitSlop={{
+                top: 10,
+                bottom: 10
+              }}
+              onPress={() => {
+                useThemeStore.getState().setColorScheme();
+              }}
+              name="theme-light-dark"
+              color={isDark ? colors.primary.accent : colors.primary.icon}
+              size={SIZE.lg}
+              style={{
+                borderRadius: 100,
+                width: 40,
+                height: 40
+              }}
+            />
+
+            <Pressable
+              style={{
+                borderRadius: 100,
+                width: 40,
+                height: 40
+              }}
+              hitSlop={{
+                top: 10,
+                bottom: 10
+              }}
+              onPress={() => {
+                if (user) {
+                  Sync.run();
+                } else {
+                  tabBarRef.current?.closeDrawer();
+                  eSendEvent(eOpenLoginDialog);
+                }
+              }}
+            >
+              {user ? (
+                syncing ? (
+                  <ActivityIndicator
+                    color={colors.primary.accent}
+                    size={SIZE.xl}
+                  />
+                ) : lastSyncStatus === SyncStatus.Failed ? (
+                  <Icon
+                    color={colors.error.icon}
+                    name="sync-alert"
+                    size={SIZE.lg}
+                    allowFontScaling
+                  />
+                ) : (
+                  <Icon
+                    allowFontScaling
+                    color={colors.primary.icon}
+                    name="sync"
+                    size={SIZE.lg}
+                  />
+                )
+              ) : (
+                <Icon
+                  allowFontScaling
+                  color={colors.primary.accent}
+                  size={SIZE.lg}
+                  name="login"
+                />
+              )}
+            </Pressable>
+          </View>
+        </Pressable>
       </View>
     </View>
   );

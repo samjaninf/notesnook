@@ -1,6 +1,6 @@
 {
   "name": "@notesnook/clipper",
-  "version": "1.0.0",
+  "version": "2.1.3",
   "description": "Web clipper core used by the Notesnook Web Clipper",
   "keywords": [
     "web-clipper"
@@ -10,10 +10,10 @@
   "license": "GPL-3.0-or-later",
   "main": "dist/index.js",
   "devDependencies": {
-    "@playwright/test": "^1.27.1",
-    "slugify": "^1.6.5",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
+    "@playwright/test": "1.48.2",
+    "slugify": "1.6.6",
+    "webpack": "5.88.2",
+    "webpack-cli": "5.1.4"
   },
   "publishConfig": {
     "access": "public"
@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsc && yarn webpack -c webpack.config.js",
+    "prepublishOnly": "npm run build",
     "test": "playwright test",
     "postinstall": "patch-package",
     "watch": "tsc --watch"

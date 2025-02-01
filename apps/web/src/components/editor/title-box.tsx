@@ -17,26 +17,37 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { Input } from "@theme-ui/components";
-import { useStore, store } from "../../stores/editor-store";
+import { useEditorStore } from "../../stores/editor-store";
 import { debounceWithId } from "@notesnook/common";
 import useMobile from "../../hooks/use-mobile";
 import useTablet from "../../hooks/use-tablet";
-import { useEditorConfig } from "./context";
+import { useEditorConfig, useEditorManager } from "./manager";
 import { getFontById } from "@notesnook/editor";
-import { AppEventManager, AppEvents } from "../../common/app-events";
-import { replaceDateTime } from "@notesnook/editor/dist/extensions/date-time";
+import { replaceDateTime } from "@notesnook/editor";
 import { useStore as useSettingsStore } from "../../stores/setting-store";
+import { AppEventManager, AppEvents } from "../../common/app-events";
+import { strings } from "@notesnook/intl";
 
 type TitleBoxProps = {
+  id: string;
   readonly: boolean;
 };
 
 function TitleBox(props: TitleBoxProps) {
-  const { readonly } = props;
+  const { readonly, id } = props;
   const inputRef = useRef<HTMLInputElement>(null);
-  const id = useStore((store) => store.session.id);
+  const pendingChanges = useRef(false);
+  // const id = useStore((store) => store.session.id);
+  const sessionType = useEditorStore((store) => store.getSession(id)?.type);
   const isMobile = useMobile();
   const isTablet = useTablet();
   const { editorConfig } = useEditorConfig();
@@ -49,7 +60,7 @@ function TitleBox(props: TitleBoxProps) {
   );
 
   const updateFontSize = useCallback(
-    (length) => {
+    (length: number) => {
       if (!inputRef.current) return;
       const fontSize = textLengthToFontSize(
         length,
@@ -60,12 +71,21 @@ function TitleBox(props: TitleBoxProps) {
     [isMobile, isTablet]
   );
 
-  useEffect(() => {
-    if (!inputRef.current) return;
-    const { title } = useStore.getState().session;
-    inputRef.current.value = title;
-    updateFontSize(title.length);
-  }, [id, updateFontSize]);
+  useLayoutEffect(() => {
+    const session = useEditorStore.getState().getSession(id);
+    if (!session || !("note" in session) || !session.note || !inputRef.current)
+      return;
+    if (pendingChanges.current) return;
+
+    const { title } = session.note;
+    if (inputRef.current.value === title) return;
+
+    withSelectionPersist(
+      inputRef.current,
+      (input) => (input.value = title || "")
+    );
+    updateFontSize(title?.length || 0);
+  }, [sessionType, id, updateFontSize]);
 
   useEffect(() => {
     if (!inputRef.current) return;
@@ -75,16 +95,24 @@ function TitleBox(props: TitleBoxProps) {
   useEffect(() => {
     const { unsubscribe } = AppEventManager.subscribe(
       AppEvents.changeNoteTitle,
-      ({ preventSave, title }: { title: string; preventSave: boolean }) => {
-        if (!inputRef.current) return;
+      ({
+        preventSave,
+        title,
+        sessionId
+      }: {
+        title: string;
+        preventSave: boolean;
+        sessionId: string;
+      }) => {
+        if (!inputRef.current || sessionId !== id) return;
         withSelectionPersist(
           inputRef.current,
           (input) => (input.value = title)
         );
         updateFontSize(title.length);
         if (!preventSave) {
-          const { sessionId, id } = store.get().session;
-          debouncedOnTitleChange(sessionId, id, title);
+          pendingChanges.current = true;
+          debouncedOnTitleChange(sessionId, sessionId, title, pendingChanges);
         }
       }
     );
@@ -92,7 +120,7 @@ function TitleBox(props: TitleBoxProps) {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [updateFontSize, id]);
 
   return (
     <Input
@@ -101,7 +129,7 @@ function TitleBox(props: TitleBoxProps) {
       id="editor-title"
       data-test-id="editor-title"
       className="editorTitle"
-      placeholder={"Note title"}
+      placeholder={strings.noteTitle()}
       readOnly={readonly}
       dir="auto"
       sx={{
@@ -114,14 +142,21 @@ function TitleBox(props: TitleBoxProps) {
           color: "placeholder"
         }
       }}
+      onKeyUp={(e) => {
+        if (e.key === "Enter") {
+          const context = useEditorManager.getState().getEditor(id);
+          if (!context) return;
+          context.editor?.focus({ scrollIntoView: true });
+        }
+      }}
       onChange={(e) => {
-        const { sessionId, id } = store.get().session;
+        pendingChanges.current = true;
         e.target.value = replaceDateTime(
           e.target.value,
           dateFormat,
           timeFormat
         );
-        debouncedOnTitleChange(sessionId, id, e.target.value);
+        debouncedOnTitleChange(id, id, e.target.value, pendingChanges);
         updateFontSize(e.target.value.length);
       }}
     />
@@ -132,8 +167,13 @@ export default React.memo(TitleBox, (prevProps, nextProps) => {
   return prevProps.readonly === nextProps.readonly;
 });
 
-function onTitleChange(noteId: string | undefined, title: string) {
-  store.get().setTitle(noteId, title);
+function onTitleChange(
+  noteId: string,
+  title: string,
+  pendingChanges: React.MutableRefObject<boolean>
+) {
+  useEditorStore.getState().setTitle(noteId, title);
+  pendingChanges.current = false;
 }
 
 const debouncedOnTitleChange = debounceWithId(onTitleChange, 100);

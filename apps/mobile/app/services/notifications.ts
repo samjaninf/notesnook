@@ -17,54 +17,42 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { isReminderActive, Reminder } from "@notesnook/core";
+import { strings } from "@notesnook/intl";
 import notifee, {
   AndroidStyle,
   AuthorizationStatus,
   DisplayedNotification,
+  Event,
   EventType,
   RepeatFrequency,
+  TimestampTrigger,
   Trigger,
-  TriggerType,
-  Event,
   TriggerNotification,
-  TimestampTrigger
+  TriggerType
 } from "@notifee/react-native";
+import NetInfo from "@react-native-community/netinfo";
 import dayjs, { Dayjs } from "dayjs";
+import { encodeNonAsciiHTML } from "entities";
 import { Platform } from "react-native";
-import { db } from "../common/database";
-import { MMKV } from "../common/database/mmkv";
+import { db, setupDatabase } from "../common/database";
+import { presentDialog } from "../components/dialog/functions";
+import { useTabStore } from "../screens/editor/tiptap/use-tab-store";
 import { editorState } from "../screens/editor/tiptap/utils";
-import { useNoteStore } from "../stores/use-notes-store";
-import { eOnLoadNote } from "../utils/events";
-import { tabBarRef } from "../utils/global-refs";
-import { DDS } from "./device-detection";
-import { eSendEvent } from "./event-manager";
-import SettingsService from "./settings";
-import { useSettingStore } from "../stores/use-setting-store";
-import { sleep } from "../utils/time";
 import { useRelationStore } from "../stores/use-relation-store";
 import { useReminderStore } from "../stores/use-reminder-store";
-import { presentDialog } from "../components/dialog/functions";
-import NetInfo from "@react-native-community/netinfo";
-import { encodeNonAsciiHTML } from "entities";
+import { useSettingStore } from "../stores/use-setting-store";
+import { useUserStore } from "../stores/use-user-store";
+import { eOnLoadNote } from "../utils/events";
+import { tabBarRef } from "../utils/global-refs";
 import { convertNoteToText } from "../utils/note-to-text";
-
-export type Reminder = {
-  id: string;
-  type: string;
-  title: string;
-  description?: string;
-  priority: "silent" | "vibrate" | "urgent";
-  date: number;
-  mode: "repeat" | "once" | "permanent";
-  recurringMode?: "week" | "month" | "day";
-  selectedDays?: number[];
-  dateCreated: number;
-  dateModified: number;
-  localOnly?: boolean;
-  snoozeUntil?: number;
-  disabled?: boolean;
-};
+import { NotesnookModule } from "../utils/notesnook-module";
+import { sleep } from "../utils/time";
+import { DDS } from "./device-detection";
+import { eSendEvent } from "./event-manager";
+import Navigation from "./navigation";
+import SettingsService from "./settings";
+import { getFormattedReminderTime } from "@notesnook/common";
 
 let pinned: DisplayedNotification[] = [];
 
@@ -110,32 +98,41 @@ function encodeLine(line: string) {
   return line;
 }
 
-async function initDatabase(notes = true) {
+async function initDatabase() {
   if (!db.isInitialized) {
-    await db.initCollections();
-  }
-  if (notes) {
-    await db.notes?.init();
+    await setupDatabase();
+    await db.init();
   }
 }
 
 const onEvent = async ({ type, detail }: Event) => {
+  await initDatabase();
   const { notification, pressAction, input } = detail;
   if (type === EventType.DELIVERED && Platform.OS === "android") {
-    const reminder = db.reminders?.reminder(notification?.id?.split("_")[0]);
-    if (reminder && reminder.recurringMode === "month") {
-      await initDatabase();
-      await scheduleNotification(reminder);
+    if (notification?.id) {
+      const reminder = await db.reminders?.reminder(
+        notification?.id?.split("_")[0]
+      );
+
+      if (
+        reminder &&
+        (reminder.recurringMode === "month" ||
+          reminder?.recurringMode === "year")
+      ) {
+        await scheduleNotification(reminder);
+      }
     }
+    updateRemindersForWidget();
     return;
   }
   if (type === EventType.PRESS) {
     notifee.decrementBadgeCount();
     if (notification?.data?.type === "quickNote") return;
-    MMKV.removeItem("appState");
-    await initDatabase();
-    if (notification?.data?.type === "reminder") {
-      const reminder = db.reminders?.reminder(notification.id?.split("_")[0]);
+    NotesnookModule.setAppState("");
+    if (notification?.data?.type === "reminder" && notification?.id) {
+      const reminder = await db.reminders?.reminder(
+        notification.id?.split("_")[0]
+      );
       if (!reminder) return;
       await sleep(1000);
       const ReminderNotify =
@@ -146,29 +143,20 @@ const onEvent = async ({ type, detail }: Event) => {
     }
     editorState().movedAway = false;
     const noteId = notification?.id;
-    if (useNoteStore?.getState()?.loading === false) {
-      loadNote(noteId as string, false);
-      return;
-    }
-    const unsub = useNoteStore.subscribe(
-      (loading) => {
-        if (loading === false) {
-          loadNote(noteId as string, true);
-        }
-        unsub();
-      },
-      (state) => state.loading
-    );
+
+    loadNote(noteId as string, true);
   }
 
   if (type === EventType.ACTION_PRESS) {
     notifee.decrementBadgeCount();
     switch (pressAction?.id) {
       case "REMINDER_SNOOZE": {
-        await initDatabase();
-        const reminder = db.reminders?.reminder(
+        if (!notification?.id) break;
+        const reminder = await db.reminders?.reminder(
           notification?.id?.split("_")[0]
         );
+        if (!reminder) break;
+
         const reminderTime = parseInt(
           SettingsService.get().defaultSnoozeTime || "5"
         );
@@ -177,32 +165,35 @@ const onEvent = async ({ type, detail }: Event) => {
           snoozeUntil: Date.now() + reminderTime * 60000
         });
         await Notifications.scheduleNotification(
-          db.reminders?.reminder(reminder?.id)
+          await db.reminders?.reminder(reminder?.id)
         );
         useRelationStore.getState().update();
-        useReminderStore.getState().setReminders();
+        useReminderStore.getState().refresh();
+        updateRemindersForWidget();
         break;
       }
       case "REMINDER_DISABLE": {
-        await initDatabase();
-        const reminder = db.reminders?.reminder(
+        if (!notification?.id) break;
+        const reminder = await db.reminders?.reminder(
           notification?.id?.split("_")[0]
         );
         await db.reminders?.add({
           ...reminder,
           disabled: true
         });
+        if (!reminder?.id) break;
         await Notifications.scheduleNotification(
-          db.reminders?.reminder(reminder?.id)
+          await db.reminders?.reminder(reminder?.id)
         );
         useRelationStore.getState().update();
-        useReminderStore.getState().setReminders();
+        useReminderStore.getState().refresh();
+        updateRemindersForWidget();
         break;
       }
-      case "UNPIN": {
-        await initDatabase();
+      case strings.unpin(): {
+        if (!notification?.id) break;
         remove(notification?.id as string);
-        const reminder = db.reminders?.reminder(
+        const reminder = await db.reminders?.reminder(
           notification?.id?.split("_")[0]
         );
         if (reminder) {
@@ -211,26 +202,24 @@ const onEvent = async ({ type, detail }: Event) => {
             disabled: true
           });
           useRelationStore.getState().update();
-          useReminderStore.getState().setReminders();
+          useReminderStore.getState().refresh();
         }
         break;
       }
 
-      case "Hide":
+      case strings.hide():
         unpinQuickNote();
         break;
       case "ReplyInput": {
         displayNotification({
-          title: "Quick note",
-          message: 'Tap on "Take note" to add a note.',
+          title: strings.quickNoteTitle(),
+          message: strings.quickNoteContent(),
           ongoing: true,
-          actions: ["ReplyInput", "Hide"],
+          actions: ["ReplyInput", strings.hide()],
           id: "notesnook_note_input",
-          reply_button_text: "Take note",
-          reply_placeholder_text: "Write something..."
+          reply_button_text: strings.takeNote(),
+          reply_placeholder_text: strings.quickNotePlaceholder()
         });
-        if (!db.isInitialized) await db.init();
-        await db.notes?.init();
 
         const id = await db.notes?.add({
           content: {
@@ -242,40 +231,54 @@ const onEvent = async ({ type, detail }: Event) => {
         const defaultNotebook = db.settings?.getDefaultNotebook();
 
         if (defaultNotebook) {
-          if (!defaultNotebook.topic) {
-            await db.relations?.add(
-              { type: "notebook", id: defaultNotebook.id },
-              { type: "note", id: id }
-            );
-          } else {
-            await db.notes?.addToNotebook(
-              {
-                topic: defaultNotebook.topic,
-                id: defaultNotebook?.id
-              },
-              id
-            );
-          }
+          await db.notes?.addToNotebook(defaultNotebook, id);
         }
 
         const status = await NetInfo.fetch();
         if (status.isInternetReachable) {
           try {
             if (!globalThis["IS_MAIN_APP_RUNNING" as never]) {
-              await db.sync(false, false);
-            } else {
-              console.log("main app running, skipping sync");
+              await db.sync({ type: "send", force: false });
             }
           } catch (e) {
-            console.log(e, (e as Error).stack);
+            /* empty */
           }
         }
-        useNoteStore.getState().setNotes();
+        Navigation.queueRoutesForUpdate();
         break;
       }
     }
   }
 };
+
+type ReminderWithFormattedTime = Reminder & {
+  formattedTime?: string;
+};
+
+async function updateRemindersForWidget() {
+  if (Platform.OS === "ios") return;
+  const reminders: ReminderWithFormattedTime[] = await db.reminders?.all.items(
+    undefined,
+    {
+      sortBy: "dueDate",
+      sortDirection: "asc"
+    }
+  );
+  const activeReminders = [];
+  if (!reminders) return;
+  for (const reminder of reminders) {
+    if (isReminderActive(reminder)) {
+      reminder.formattedTime = getFormattedReminderTime(reminder);
+      activeReminders.push(reminder);
+    }
+  }
+  NotesnookModule.setString(
+    "appPreview",
+    "remindersList",
+    JSON.stringify(activeReminders)
+  );
+  NotesnookModule.updateReminderWidget();
+}
 
 async function setupIOSCategories() {
   try {
@@ -290,7 +293,7 @@ async function setupIOSCategories() {
               {
                 id: "REMINDER_SNOOZE",
                 foreground: false,
-                title: `Remind in ${reminderTime} min`,
+                title: strings.remindMeIn() + ` ${reminderTime} min`,
                 authenticationRequired: false
               }
             ]
@@ -301,13 +304,13 @@ async function setupIOSCategories() {
               {
                 id: "REMINDER_SNOOZE",
                 foreground: false,
-                title: `Remind in ${reminderTime} min`,
+                title: strings.remindMeIn() + ` ${reminderTime} min`,
                 authenticationRequired: false
               },
               {
                 id: "REMINDER_DISABLE",
                 foreground: false,
-                title: "Disable",
+                title: strings.disable(),
                 authenticationRequired: false
               }
             ]
@@ -316,7 +319,7 @@ async function setupIOSCategories() {
       }
     }
   } catch (e) {
-    console.log("ERROR in setupIOSCategories", e);
+    /* empty */
   }
 }
 
@@ -345,7 +348,7 @@ async function scheduleNotification(
           message: description || "",
           ongoing: true,
           subtitle: description || "",
-          actions: ["UNPIN"]
+          actions: [strings.unpin()]
         });
       }
       return;
@@ -375,23 +378,24 @@ async function scheduleNotification(
       ];
       if (reminder.mode === "repeat") {
         androidActions.push({
-          title: "Disable",
+          title: strings.disable(),
           pressAction: {
             id: "REMINDER_DISABLE"
           }
         });
       }
+
       await notifee.createTriggerNotification(
         {
           id: trigger.id,
-          title: title,
-          body: description,
+          title: !title ? undefined : title,
+          body: !description ? undefined : description,
           data: {
             type: "reminder",
             payload: payload || "",
             dateModified: reminder.dateModified + ""
           },
-          subtitle: description,
+          subtitle: !description ? undefined : description,
           android: {
             channelId: await getChannelId(priority),
             smallIcon: "ic_stat_name",
@@ -425,25 +429,33 @@ async function scheduleNotification(
         trigger
       );
     }
+    updateRemindersForWidget();
   } catch (e) {
-    console.log(e);
+    /* empty */
   }
 }
 
-function loadNote(id: string, jump: boolean) {
+async function loadNote(id: string, jump: boolean) {
   if (!id || id === "notesnook_note_input") return;
-  const note = db.notes?.note(id)?.data;
+  const note = await db.notes.note(id);
   if (!note) return;
   if (!DDS.isTab && jump) {
     tabBarRef.current?.goToPage(1);
   }
-  eSendEvent("loadingNote", note);
-  setTimeout(() => {
-    eSendEvent(eOnLoadNote, note);
-    if (!jump && !DDS.isTab) {
-      tabBarRef.current?.goToPage(1);
-    }
-  }, 2000);
+  NotesnookModule.setAppState(
+    JSON.stringify({
+      editing: true,
+      movedAway: false,
+      timestamp: Date.now()
+    })
+  );
+
+  const tab = useTabStore.getState().getTabForNote(id);
+  if (useTabStore.getState().currentTab !== tab) {
+    eSendEvent(eOnLoadNote, {
+      note: note
+    });
+  }
 }
 
 async function getChannelId(id: "silent" | "vibrate" | "urgent" | "default") {
@@ -501,7 +513,15 @@ async function displayNotification({
   reply_button_text?: string;
   id?: string;
 }) {
-  if (!(await checkAndRequestPermissions())) return;
+  useUserStore.setState({
+    disableAppLockRequests: true
+  });
+  const permission = await checkAndRequestPermissions();
+  useUserStore.setState({
+    disableAppLockRequests: false
+  });
+
+  if (!permission) return;
 
   try {
     await notifee.displayNotification({
@@ -545,17 +565,17 @@ async function displayNotification({
       }
     });
   } catch (e) {
-    console.log(e);
+    /* empty */
   }
 }
 
-function openSettingsDialog(context: any) {
+function openSettingsDialog(context: string) {
   return new Promise((resolve) => {
     presentDialog({
-      title: "Notifications disabled",
-      paragraph: `Reminders cannot be set because notifications have been disabled from app settings. If you want to keep receiving reminder notifications, enable notifications for Notesnook from app settings.`,
-      positiveText: Platform.OS === "ios" ? undefined : "Open settings",
-      negativeText: Platform.OS === "ios" ? "Close" : "Cancel",
+      title: strings.notificationsDisabled(),
+      paragraph: strings.notificationsDisabledDesc(),
+      positiveText: Platform.OS === "ios" ? undefined : strings.openSettings(),
+      negativeText: Platform.OS === "ios" ? strings.close() : strings.cancel(),
       positivePress:
         Platform.OS === "ios"
           ? undefined
@@ -764,6 +784,42 @@ async function getTriggers(
           }
 
           break;
+        case "year":
+          {
+            let timestamp = dayjs()
+              .month(relativeTime.month())
+              .date(relativeTime.date())
+              .hour(relativeTime.hour())
+              .minute(relativeTime.minute());
+            // Timestamp must always be in future.
+            if (timestamp.isBefore(dayjs())) {
+              do {
+                timestamp = timestamp.add(1, "year");
+              } while (timestamp.isBefore(dayjs()));
+            }
+
+            if (Platform.OS === "ios") {
+              triggers.push({
+                timestamp: timestamp.toDate().getTime() as number,
+                type: TriggerType.TIMESTAMP,
+                repeatFrequency: RepeatFrequency.YEARLY,
+                id: `${reminder.id}`,
+                alarmManager: {
+                  allowWhileIdle: true
+                }
+              });
+            } else {
+              triggers.push({
+                timestamp: timestamp.toDate().getTime() as number,
+                type: TriggerType.TIMESTAMP,
+                id: reminder.id,
+                alarmManager: {
+                  allowWhileIdle: true
+                }
+              });
+            }
+          }
+          break;
       }
     }
   }
@@ -835,19 +891,28 @@ async function remove(id: string) {
 }
 
 async function pinQuickNote(launch: boolean) {
-  if (!(await checkAndRequestPermissions())) return;
+  useUserStore.setState({
+    disableAppLockRequests: true
+  });
+  const permission = await checkAndRequestPermissions();
+  useUserStore.setState({
+    disableAppLockRequests: false
+  });
+  if (!permission) {
+    return;
+  }
   get().then((items) => {
     const notification = items.filter((n) => n.id === "notesnook_note_input");
     if (notification && launch) {
       return;
     }
     displayNotification({
-      title: "Quick note",
-      message: 'Tap on "Take note" to add a note.',
+      title: strings.quickNoteTitle(),
+      message: strings.quickNoteContent(),
       ongoing: true,
-      actions: ["ReplyInput", "Hide"],
-      reply_button_text: "Take note",
-      reply_placeholder_text: "Write something...",
+      actions: ["ReplyInput", strings.hide()],
+      reply_button_text: strings.takeNote(),
+      reply_placeholder_text: strings.quickNotePlaceholder(),
       id: "notesnook_note_input"
     });
   });
@@ -858,13 +923,16 @@ async function pinQuickNote(launch: boolean) {
  * reschedules them if anything has changed.
  */
 async function setupReminders(checkNeedsScheduling = false) {
-  const reminders = (db.reminders?.all as Reminder[]) || [];
+  const reminders = ((await db.reminders?.all.items()) as Reminder[]) || [];
   const triggers = await notifee.getTriggerNotifications();
-
   for (const reminder of reminders) {
     if (reminder.mode === "permanent") {
       await scheduleNotification(reminder);
     }
+
+    // Skip reminders that are not repeating and their trigger date is in past.
+    if (reminder.mode === "once" && dayjs().isAfter(reminder.date)) continue;
+
     const pending = triggers.filter((t) =>
       t.notification.id?.startsWith(reminder.id)
     );
@@ -876,6 +944,7 @@ async function setupReminders(checkNeedsScheduling = false) {
           reminder.dateModified
         : true;
     }
+
     if (!needsReschedule && checkNeedsScheduling) continue;
 
     await scheduleNotification(reminder);
@@ -897,27 +966,33 @@ async function setupReminders(checkNeedsScheduling = false) {
       trigger.notification.id &&
       notifee.cancelTriggerNotification(trigger.notification.id as string)
   );
+  updateRemindersForWidget();
 }
 
 async function pinNote(id: string) {
   try {
-    const note = db.notes?.note(id as string) as any;
-    let text = await convertNoteToText(note as any, false);
+    const note = await db.notes.note(id as string);
+    if (!note) return;
+
+    let text = await convertNoteToText(note, true);
     if (!text) text = "";
-    let html = text.replace(/\n/g, "<br />");
+    const html = text.replace(/\n/g, "<br />");
     Notifications.displayNotification({
       title: note.title,
       message: note.headline || text,
-      subtitle: note.headline || text,
+      subtitle: "",
       bigText: html,
       ongoing: true,
-      actions: ["UNPIN"],
+      actions: [strings.unpin()],
       id: note.id
     });
   } catch (e) {
-    console.log(e);
+    /* empty */
   }
 }
+const Events = {
+  onUpdate: "onUpdate"
+};
 
 const Notifications = {
   init,
@@ -936,7 +1011,9 @@ const Notifications = {
   setupReminders,
   getChannelId,
   isNotePinned,
-  pinNote
+  pinNote,
+  Events,
+  updateRemindersForWidget
 };
 
 export default Notifications;

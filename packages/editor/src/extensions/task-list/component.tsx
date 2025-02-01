@@ -19,16 +19,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { Box, Flex, Input, Text } from "@theme-ui/components";
 import { useMemo } from "react";
-import { ToolButton } from "../../toolbar/components/tool-button";
-import { ReactNodeViewProps } from "../react";
-import { toggleChildren, type TaskListAttributes } from "./task-list";
-import { replaceDateTime } from "../date-time";
-import { deleteCheckedItems, sortList } from "./utils";
+import { ToolButton } from "../../toolbar/components/tool-button.js";
+import { ReactNodeViewProps } from "../react/index.js";
+import { type TaskListAttributes } from "./task-list.js";
+import { replaceDateTime } from "../date-time/index.js";
+import { deleteCheckedItems, sortList, toggleChildren } from "./utils.js";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { useIsMobile } from "../../toolbar/stores/toolbar-store";
-import { Icons } from "../../toolbar/icons";
+import { useIsMobile } from "../../toolbar/stores/toolbar-store.js";
+import { Icons } from "../../toolbar/icons.js";
 import { Icon } from "@notesnook/ui";
+import { strings } from "@notesnook/intl";
 
 export function TaskListComponent(
   props: ReactNodeViewProps<TaskListAttributes>
@@ -39,7 +40,9 @@ export function TaskListComponent(
   const checked = stats.total > 0 && stats.total === stats.checked;
 
   const isNested = useMemo(() => {
-    if (!pos) return false;
+    if (!pos || !(pos >= 0 && pos <= editor.state.doc.content.size))
+      return false;
+
     return editor.state.doc.resolve(pos).parent.type.name === TaskItem.name;
   }, [editor.state.doc, pos]);
 
@@ -97,7 +100,7 @@ export function TaskListComponent(
               }}
               onClick={() => {
                 const parentPos = getPos();
-                editor.current?.commands.command(({ tr }) => {
+                editor.commands.command(({ tr }) => {
                   const node = tr.doc.nodeAt(parentPos);
                   if (!node) return false;
                   toggleChildren(tr, node, !checked, parentPos);
@@ -121,12 +124,12 @@ export function TaskListComponent(
               fontSize: "inherit",
               fontFamily: "inherit"
             }}
-            placeholder="Untitled"
+            placeholder={strings.untitled()}
             onChange={(e) => {
               e.target.value = replaceDateTime(
                 e.target.value,
-                editor.current?.storage.dateFormat,
-                editor.current?.storage.timeFormat
+                editor.storage.dateFormat,
+                editor.storage.timeFormat
               );
               updateAttributes(
                 { title: e.target.value },
@@ -138,7 +141,7 @@ export function TaskListComponent(
             <>
               <ToolButton
                 toggled={false}
-                title="Make tasklist readonly"
+                title={strings.readonlyTaskList()}
                 icon={readonly ? "readonlyOn" : "readonlyOff"}
                 variant="small"
                 sx={{
@@ -146,7 +149,7 @@ export function TaskListComponent(
                 }}
                 onClick={() => {
                   const parentPos = getPos();
-                  editor.current?.commands.command(({ tr }) => {
+                  editor.commands.command(({ tr }) => {
                     const node = tr.doc.nodeAt(parentPos);
                     if (!node) return false;
                     const toggleState = !node.attrs.readonly;
@@ -169,7 +172,7 @@ export function TaskListComponent(
               />
               <ToolButton
                 toggled={false}
-                title="Move all checked tasks to bottom"
+                title={strings.sortTaskList()}
                 icon="sortTaskList"
                 variant="small"
                 sx={{
@@ -177,7 +180,7 @@ export function TaskListComponent(
                 }}
                 onClick={() => {
                   const pos = getPos();
-                  editor.current
+                  editor
                     ?.chain()
                     .focus()
                     .command(({ tr }) => {
@@ -188,7 +191,7 @@ export function TaskListComponent(
               />
               <ToolButton
                 toggled={false}
-                title="Clear completed tasks"
+                title={strings.clearCompletedTasks()}
                 icon="clear"
                 variant="small"
                 sx={{
@@ -197,7 +200,7 @@ export function TaskListComponent(
                 onClick={() => {
                   const pos = getPos();
 
-                  editor.current
+                  editor
                     ?.chain()
                     .focus()
                     .command(({ tr }) => {
@@ -227,6 +230,9 @@ export function TaskListComponent(
         ref={forwardRef}
         dir={textDirection}
         contentEditable={editor.isEditable && !readonly}
+        onPaste={(e) => {
+          if (readonly) e.preventDefault();
+        }}
         sx={{
           ul: {
             display: "block",

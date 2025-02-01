@@ -23,26 +23,24 @@ import { useCallback, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { SUBSCRIPTION_STATUS } from "../../../common/constants";
 import { db } from "../../../common/db";
-import { confirm, showBuyDialog } from "../../../common/dialog-controller";
 import { TaskManager } from "../../../common/task-manager";
 import { showToast } from "../../../utils/toast";
 import { Loading } from "../../../components/icons";
 import { Features } from "../../buy-dialog/features";
+import { ConfirmDialog } from "../../confirm";
+import { BuyDialog } from "../../buy-dialog";
+import { strings } from "@notesnook/intl";
+import { PromptDialog } from "../../prompt";
 
-const PROVIDER_MAP = {
-  0: "Streetwriters",
-  1: "iOS",
-  2: "Android",
-  3: "Web"
-} as const;
 export function SubscriptionStatus() {
   const user = useUserStore((store) => store.user);
 
   const [activateTrial, isActivatingTrial] = useAction(async () => {
-    await db.user?.activateTrial();
+    await db.user.activateTrial();
   });
 
-  const provider = PROVIDER_MAP[user?.subscription?.provider || 0];
+  const provider =
+    strings.subscriptionProviderInfo[user?.subscription?.provider || 0];
   const {
     isTrial,
     isBeta,
@@ -70,7 +68,7 @@ export function SubscriptionStatus() {
     const expiryDate = dayjs(user?.subscription?.expiry).format("MMMM D, YYYY");
     const startDate = dayjs(user?.subscription?.start).format("MMMM D, YYYY");
     return isPro
-      ? provider === "Streetwriters"
+      ? provider.type === "Streetwriters" || provider.type === "Gift card"
         ? `Ending on ${expiryDate}`
         : `Next payment on ${expiryDate}.`
       : isProCancelled
@@ -107,7 +105,7 @@ export function SubscriptionStatus() {
             color: "accent"
           }}
         >
-          CURRENT PLAN
+          {strings.currentPlan()}
         </Text>
         <Text
           variant="heading"
@@ -130,66 +128,58 @@ export function SubscriptionStatus() {
             : "Access only to basic features including unlimited notes & end-to-end encrypted syncing to unlimited devices."}
         </Text>
         <Text sx={{ mt: 2 }} variant="subBody">
-          {subtitle}
+          {subtitle}. {provider.desc()}
         </Text>
         <Flex sx={{ gap: 1, mt: 2 }}>
-          {provider === "Web" && (isPro || isProCancelled) ? (
+          {provider.type === "Web" && (isPro || isProCancelled) ? (
             <>
               {isPro && (
                 <Button
                   variant="secondary"
                   onClick={async () => {
-                    const cancelSubscription = await confirm({
+                    const cancelSubscription = await ConfirmDialog.show({
                       title: "Cancel subscription?",
                       message:
                         "Cancelling your subscription will automatically downgrade you to the Basic plan at the end of your billing period. You will have to resubscribe to continue using the Pro features.",
-                      negativeButtonText: "No",
-                      positiveButtonText: "Yes"
+                      negativeButtonText: strings.no(),
+                      positiveButtonText: strings.yes()
                     });
                     if (cancelSubscription) {
                       await TaskManager.startTask({
                         type: "modal",
                         title: "Cancelling your subscription",
-                        subtitle: "Please wait...",
-                        action: () => db.subscriptions?.cancel()
+                        subtitle: strings.pleaseWait() + "...",
+                        action: () => db.subscriptions.cancel()
                       })
                         .catch((e) => showToast("error", e.message))
                         .then(() =>
-                          showToast(
-                            "success",
-                            "Your subscription has been canceled."
-                          )
+                          showToast("success", strings.subCanceled())
                         );
                     }
                   }}
                 >
-                  Cancel subscription
+                  {strings.cancelSub()}
                 </Button>
               )}
               <Button
                 variant="secondary"
                 onClick={async () => {
-                  const refundSubscription = await confirm({
+                  const refundSubscription = await ConfirmDialog.show({
                     title: "Request refund?",
                     message:
                       "You will only be issued a refund if you are eligible as per our refund policy. Your account will be immediately downgraded to Basic and your funds will be transferred to your account within 24 hours.",
-                    negativeButtonText: "No",
-                    positiveButtonText: "Yes"
+                    negativeButtonText: strings.no(),
+                    positiveButtonText: strings.yes()
                   });
                   if (refundSubscription) {
                     await TaskManager.startTask({
                       type: "modal",
                       title: "Requesting refund for your subscription",
-                      subtitle: "Please wait...",
-                      action: () => db.subscriptions?.refund()
+                      subtitle: strings.pleaseWait() + "...",
+                      action: () => db.subscriptions.refund()
                     })
                       .catch((e) => showToast("error", e.message))
-                      .then(() =>
-                        showToast(
-                          "success",
-                          "Your refund has been issued. Please wait 24 hours before reaching out to us in case you do not receive your funds."
-                        )
-                      );
+                      .then(() => showToast("success", strings.refundIssued()));
                   }
                 }}
               >
@@ -199,8 +189,8 @@ export function SubscriptionStatus() {
           ) : null}
           {!isPro && (
             <>
-              <Button variant="accent" onClick={() => showBuyDialog()}>
-                {isProCancelled ? "Resubscribe" : "Upgrade to Pro"}
+              <Button variant="accent" onClick={() => BuyDialog.show({})}>
+                {isProCancelled ? strings.resubToPro() : strings.upgradeToPro()}
               </Button>
               {isBasic && (
                 <Button
@@ -211,10 +201,30 @@ export function SubscriptionStatus() {
                   {isActivatingTrial ? (
                     <Loading size={16} />
                   ) : (
-                    "Try free for 14 days"
+                    strings.tryFreeFor14Days()
                   )}
                 </Button>
               )}
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  const giftCode = await PromptDialog.show({
+                    title: strings.redeemGiftCode(),
+                    description: strings.redeemGiftCodeDesc()
+                  });
+                  if (giftCode) {
+                    await TaskManager.startTask({
+                      type: "modal",
+                      title: strings.redeemingGiftCode(),
+                      subtitle: strings.pleaseWait() + "...",
+                      action: () => db.subscriptions.redeemCode(giftCode)
+                    }).catch((e) => showToast("error", e.message));
+                  }
+                }}
+                sx={{ bg: "background" }}
+              >
+                {strings.redeemGiftCode()}
+              </Button>
             </>
           )}
         </Flex>

@@ -19,12 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { useThemeColors } from "@notesnook/theme";
 import React, { useEffect, useState } from "react";
-import { Modal, View } from "react-native";
+import { View } from "react-native";
 import { db } from "../../common/database";
 import { MMKV } from "../../common/database/mmkv";
 import BiometricService from "../../services/biometrics";
 import {
-  ToastEvent,
+  ToastManager,
   eSendEvent,
   eSubscribeEvent
 } from "../../services/event-manager";
@@ -37,6 +37,7 @@ import { eLoginSessionExpired, eUserLoggedIn } from "../../utils/events";
 import { SIZE } from "../../utils/size";
 import { sleep } from "../../utils/time";
 import { Dialog } from "../dialog";
+import BaseDialog from "../dialog/base-dialog";
 import { presentDialog } from "../dialog/functions";
 import SheetProvider from "../sheet-provider";
 import { Toast } from "../toast";
@@ -46,7 +47,7 @@ import Input from "../ui/input";
 import Heading from "../ui/typography/heading";
 import Paragraph from "../ui/typography/paragraph";
 import { LoginSteps, useLogin } from "./use-login";
-import BaseDialog from "../dialog/base-dialog";
+import { strings } from "@notesnook/intl";
 
 function getObfuscatedEmail(email) {
   if (!email) return "";
@@ -69,6 +70,9 @@ export const SessionExpired = () => {
       eSendEvent(eUserLoggedIn, true);
       setVisible(false);
       setFocused(false);
+      useUserStore.setState({
+        disableAppLockRequests: false
+      });
     },
     true
   );
@@ -84,8 +88,11 @@ export const SessionExpired = () => {
       MMKV.clearStore();
       clearAllStores();
       setVisible(false);
+      useUserStore.setState({
+        disableAppLockRequests: false
+      });
     } catch (e) {
-      ToastEvent.show({
+      ToastManager.show({
         heading: e.message,
         type: "error",
         context: "local"
@@ -102,11 +109,15 @@ export const SessionExpired = () => {
 
   const open = React.useCallback(async () => {
     try {
-      let res = await db.user.tokenManager.getToken();
+      let res = await db.tokenManager.getToken();
       if (!res) throw new Error("no token found");
-      if (db.user.tokenManager._isTokenExpired(res))
+      if (db.tokenManager._isTokenExpired(res))
         throw new Error("token expired");
-      Sync.run("global", false, true, async (complete) => {
+
+      const key = await db.user.getEncryptionKey();
+      if (!key) throw new Error("No encryption key found.");
+
+      Sync.run("global", false, "full", async (complete) => {
         if (!complete) {
           let user = await db.user.getUser();
           if (!user) return;
@@ -121,12 +132,14 @@ export const SessionExpired = () => {
         setVisible(false);
       });
     } catch (e) {
-      console.log(e);
       let user = await db.user.getUser();
       if (!user) return;
       email.current = user.email;
       setFocused(false);
       setVisible(true);
+      useUserStore.setState({
+        disableAppLockRequests: true
+      });
     }
   }, [email]);
 
@@ -139,9 +152,15 @@ export const SessionExpired = () => {
         animated={false}
         centered={false}
         onShow={async () => {
+          useUserStore.setState({
+            disableAppLockRequests: true
+          });
           await sleep(300);
           passwordInputRef.current?.focus();
           setFocused(true);
+          useUserStore.setState({
+            disableAppLockRequests: true
+          });
         }}
         enableSheetKeyboardHandler={true}
         visible={true}
@@ -166,7 +185,7 @@ export const SessionExpired = () => {
             }}
           >
             <IconButton
-              customStyle={{
+              style={{
                 width: 60,
                 height: 60
               }}
@@ -175,15 +194,14 @@ export const SessionExpired = () => {
               size={50}
             />
             <Heading size={SIZE.xxxl} color={colors.primary.heading}>
-              Session expired
+              {strings.sessionExpired()}
             </Heading>
             <Paragraph
               style={{
                 textAlign: "center"
               }}
             >
-              Your session on this device has expired. Please enter password for{" "}
-              {getObfuscatedEmail(email.current)} to continue.
+              {strings.sessionExpiredDesc(getObfuscatedEmail(email.current))}
             </Paragraph>
           </View>
 
@@ -193,13 +211,13 @@ export const SessionExpired = () => {
               onChangeText={(value) => {
                 password.current = value;
               }}
-              returnKeyLabel="Next"
+              returnKeyLabel={strings.done()}
               returnKeyType="next"
               secureTextEntry
               autoComplete="password"
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder="Password"
+              placeholder={strings.password()}
               onSubmit={() => login()}
             />
           ) : null}
@@ -213,7 +231,7 @@ export const SessionExpired = () => {
             loading={loading}
             onPress={() => login()}
             type="accent"
-            title={loading ? null : "Login"}
+            title={loading ? null : strings.login()}
           />
 
           <Button
@@ -224,16 +242,15 @@ export const SessionExpired = () => {
             onPress={() => {
               presentDialog({
                 context: "session_expiry",
-                title: "Logout",
-                paragraph:
-                  "Are you sure you want to logout from this device? Any unsynced changes will be lost.",
-                positiveText: "Logout",
+                title: strings.logoutFromDevice(),
+                paragraph: strings.logoutDesc(),
+                positiveText: strings.logout(),
                 positiveType: "errorShade",
                 positivePress: logout
               });
             }}
             type="errorShade"
-            title={loading ? null : "Logout from this device"}
+            title={loading ? null : strings.logoutFromDevice()}
           />
         </View>
         <Toast context="local" />

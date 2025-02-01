@@ -28,6 +28,7 @@ import { sleep } from "../../utils/time";
 import { Button } from "../ui/button";
 import Heading from "../ui/typography/heading";
 import Paragraph from "../ui/typography/paragraph";
+import { strings } from "@notesnook/intl";
 export const Synced = ({ item, close }) => {
   const { colors } = useThemeColors();
   const user = useUserStore((state) => state.user);
@@ -48,7 +49,7 @@ export const Synced = ({ item, close }) => {
         paddingTop: 10,
         marginTop: 10,
         borderTopWidth: 1,
-        borderTopColor: colors.secondary.background
+        borderTopColor: colors.primary.border
       }}
     >
       <Icon
@@ -71,7 +72,7 @@ export const Synced = ({ item, close }) => {
             flexWrap: "wrap"
           }}
         >
-          Encrypted and synced
+          {strings.noteSyncedNoticeHeading()}
         </Heading>
         {shouldShrink ? null : (
           <Paragraph
@@ -81,7 +82,7 @@ export const Synced = ({ item, close }) => {
             size={SIZE.xs}
             color={colors.primary.paragraph}
           >
-            No one can view this {item.itemType || item.type} except you.
+            {strings.noteSyncedNoticeDesc(item.itemType || item.type)}
           </Paragraph>
         )}
       </View>
@@ -92,17 +93,17 @@ export const Synced = ({ item, close }) => {
             close();
             await sleep(300);
             await openLinkInBrowser(
-              "https://docs.notesnook.com/how-is-my-data-encrypted/",
+              "https://help.notesnook.com/how-is-my-data-encrypted",
               colors
             );
           } catch (e) {
             console.error(e);
           }
         }}
-        title="Learn more"
+        title={strings.learnMore()}
         fontSize={SIZE.xs}
         height={30}
-        type="grayAccent"
+        type="secondaryAccented"
       />
     </View>
   ) : null;

@@ -23,12 +23,13 @@ import { db } from "./db";
 import { store as appStore } from "../stores/app-store";
 import { Backup, User, Email, Warn, Icon } from "../components/icons";
 import dayjs from "dayjs";
-import { showBuyDialog, showRecoveryKeyDialog } from "./dialog-controller";
 import { hardNavigate, hashNavigate } from "../navigation";
-
 import { isUserPremium } from "../hooks/use-is-user-premium";
 import { showToast } from "../utils/toast";
 import { TaskScheduler } from "../utils/task-scheduler";
+import { BuyDialog } from "../dialogs/buy-dialog";
+import { RecoveryKeyDialog } from "../dialogs/recovery-key-dialog";
+import { strings } from "@notesnook/intl";
 
 export type NoticeType = "autoBackupsOff" | "login" | "email" | "recoverykey";
 
@@ -38,12 +39,18 @@ export type Notice = {
   params?: any;
 };
 
-export const BACKUP_CRON_EXPRESSIONS = [
-  "",
-  "0 0 8 * * *", // daily at 8 AM
-  "0 0 8 * * 1", // Every monday at 8 AM
-  "0 0 0 1 * *" // 1st day of every month
-];
+export const BACKUP_CRON_EXPRESSIONS = {
+  0: "",
+  1: "0 0 8 * * *", // daily at 8 AM
+  2: "0 0 8 * * 1", // Every monday at 8 AM
+  3: "0 0 0 1 * *" // 1st day of every month
+};
+
+export const FULL_BACKUP_CRON_EXPRESSIONS = {
+  0: "",
+  1: "0 0 8 * * 1", // Every monday at 8 AM
+  2: "0 0 0 1 * *" // 1st day of every month
+};
 
 export async function scheduleBackups() {
   const backupInterval = Config.get("backupReminderOffset", 0);
@@ -62,6 +69,23 @@ export async function scheduleBackups() {
   );
 }
 
+export async function scheduleFullBackups() {
+  const backupInterval = Config.get("fullBackupReminderOffset", 0);
+
+  await TaskScheduler.stop("automatic-full-backups");
+  if (!backupInterval) return false;
+
+  console.log("Scheduling automatic full backups");
+  await TaskScheduler.register(
+    "automatic-full-backups",
+    FULL_BACKUP_CRON_EXPRESSIONS[backupInterval],
+    () => {
+      console.log("Backing up automatically");
+      saveBackup("full");
+    }
+  );
+}
+
 export function shouldAddAutoBackupsDisabledNotice() {
   const backupInterval = Config.get("backupReminderOffset", 0);
   if (!isUserPremium() && backupInterval) {
@@ -76,9 +100,9 @@ export async function shouldAddBackupNotice() {
   const backupInterval = Config.get("backupReminderOffset", 0);
   if (!backupInterval) return false;
 
-  const lastBackupTime = await db.backup?.lastBackupTime();
+  const lastBackupTime = await db.backup.lastBackupTime();
   if (!lastBackupTime) {
-    await db.backup?.updateBackupTime();
+    await db.backup.updateBackupTime();
     return false;
   }
 
@@ -96,12 +120,13 @@ export async function shouldAddRecoveryKeyBackupNotice() {
 }
 
 export async function shouldAddLoginNotice() {
-  const user = await db.user?.getUser();
+  const user = await db.user.getUser();
   if (!user) return true;
 }
 
 export async function shouldAddConfirmEmailNotice() {
-  const user = await db.user?.getUser();
+  const user = await db.user.getUser();
+  if (!user) return false;
   return !user?.isEmailConfirmed;
 }
 
@@ -117,33 +142,33 @@ type NoticeData = {
 export const NoticesData: Record<NoticeType, NoticeData> = {
   autoBackupsOff: {
     key: "autoBackupsOff",
-    title: "Automatic backups disabled",
-    subtitle: "Please upgrade to Pro to enable automatic backups.",
-    action: () => showBuyDialog(),
+    title: strings.automaticBackupsDisabled(),
+    subtitle: strings.automaticBackupsDisabledDesc(),
+    action: () => BuyDialog.show({}),
     dismissable: true,
     icon: Backup
   },
   login: {
     key: "login",
-    title: "Login to sync your notes",
-    subtitle: "You are not logged in",
+    title: strings.loginMessageActionText(),
+    subtitle: strings.loginMessage(),
     action: () => hardNavigate("/login"),
     icon: User
   },
   email: {
     key: "email",
-    title: "Your email is not confirmed",
-    subtitle: "Please confirm your email to sync your notes",
+    title: strings.emailNotConfirmed(),
+    subtitle: strings.emailNotConfirmedDesc(),
     action: () => hashNavigate("/email/verify"),
     icon: Email
   },
   recoverykey: {
     key: "recoverykey",
-    title: "Backup your recovery key",
-    subtitle: "Keep your recovery key safe",
+    title: strings.recoveryKeyMessageActionText(),
+    subtitle: strings.recoveryKeyMessage(),
     dismissable: true,
     action: async () => {
-      if (await verifyAccount()) await showRecoveryKeyDialog();
+      if (await verifyAccount()) await RecoveryKeyDialog.show({});
     },
     icon: Warn
   }
@@ -175,28 +200,28 @@ function isIgnored(key: keyof typeof NoticesData) {
 }
 
 let openedToast: { hide: () => void } | null = null;
-async function saveBackup() {
+async function saveBackup(mode: "full" | "partial" = "partial") {
   if (IS_DESKTOP_APP) {
-    await createBackup();
+    await createBackup({ noVerify: true, mode, background: true });
   } else if (isUserPremium() && !IS_TESTING) {
     if (openedToast !== null) return;
     openedToast = showToast(
       "success",
-      "Your backup is ready for download.",
+      strings.backupReadyToDownload(),
       [
         {
-          text: "Later",
+          text: strings.later(),
           onClick: async () => {
-            await db.backup?.updateBackupTime();
+            await db.backup.updateBackupTime();
             openedToast?.hide();
             openedToast = null;
           },
           type: "paragraph"
         },
         {
-          text: "Download",
+          text: strings.network.download(),
           onClick: async () => {
-            await createBackup();
+            await createBackup({ mode });
             openedToast?.hide();
             openedToast = null;
           },

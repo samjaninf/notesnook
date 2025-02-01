@@ -120,7 +120,10 @@ import {
   mdiPencil,
   mdiCheckboxMultipleBlankOutline,
   mdiCheckboxMultipleMarked,
-  mdiFormatFloatLeft
+  mdiFormatFloatLeft,
+  mdiMessageOutline,
+  mdiVectorLink,
+  mdiPinOutline
 } from "@mdi/js";
 
 export const Icons = {
@@ -147,6 +150,7 @@ export const Icons = {
   bulletList: mdiFormatListBulleted,
   highlight: mdiFormatColorHighlight,
   textColor: mdiFormatColorText,
+  noteLink: mdiVectorLink,
   link: mdiLinkPlus,
   linkRemove: mdiLinkOff,
   openLink: mdiOpenInNew,
@@ -226,6 +230,7 @@ export const Icons = {
   tableSettings: mdiTableCog,
   math: mdiFunctionVariant,
   mathBlock: mdiMathIntegral,
+  callout: mdiMessageOutline,
   outlineList: mdiFileTreeOutline,
   fontFamily: mdiFormatFont,
   fontSize: mdiFormatFontSizeIncrease,
@@ -249,6 +254,8 @@ export const Icons = {
   readonlyOff: mdiPencil,
   selectAllUnchecked: mdiCheckboxMultipleBlankOutline,
   selectAllChecked: mdiCheckboxMultipleMarked,
+  checkList: mdiCheckboxMarkedOutline,
+  pin: mdiPinOutline,
   none: ""
 };
 

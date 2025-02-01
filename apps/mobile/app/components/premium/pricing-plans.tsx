@@ -25,7 +25,7 @@ import { usePricing } from "../../hooks/use-pricing";
 import {
   eSendEvent,
   presentSheet,
-  ToastEvent
+  ToastManager
 } from "../../services/event-manager";
 import PremiumService from "../../services/premium";
 import { useThemeColors } from "@notesnook/theme";
@@ -48,6 +48,7 @@ import Paragraph from "../ui/typography/paragraph";
 import { Walkthrough } from "../walkthroughs";
 import { PricingItem } from "./pricing-item";
 import { useSettingStore } from "../../stores/use-setting-store";
+import { strings } from "@notesnook/intl";
 
 const UUID_PREFIX = "0bdaea";
 const UUID_VERSION = "4";
@@ -118,7 +119,6 @@ export const PricingPlans = ({
       setLoading(false);
     } catch (e) {
       setLoading(false);
-      console.log("error getting sku", e);
     }
   }, [promo?.promoCode]);
 
@@ -128,7 +128,10 @@ export const PricingPlans = ({
       if (code.startsWith("com.streetwriters.notesnook")) {
         skuId = code;
       } else {
-        skuId = await db.offers?.getCode(code.split(":")[0], Platform.OS);
+        skuId = await db.offers?.getCode(
+          code.split(":")[0],
+          Platform.OS as "ios" | "android"
+        );
       }
 
       const products = await PremiumService.getProducts();
@@ -167,7 +170,6 @@ export const PricingPlans = ({
       });
       return true;
     } catch (e) {
-      console.log("PROMOCODE ERROR:", code, e);
       return false;
     }
   };
@@ -227,7 +229,6 @@ export const PricingPlans = ({
       });
     } catch (e) {
       setBuying(false);
-      console.log(e);
     }
   };
 
@@ -328,7 +329,7 @@ export const PricingPlans = ({
               }
             }}
             title={"Try free for 14 days"}
-            type="grayAccent"
+            type="secondaryAccented"
             width={250}
             style={{
               paddingHorizontal: 12,
@@ -393,7 +394,7 @@ export const PricingPlans = ({
                 >
                   {Platform.OS === "android"
                     ? (product.data as RNIap.SubscriptionAndroid)
-                        ?.subscriptionOfferDetails[0].pricingPhases
+                        ?.subscriptionOfferDetails[0]?.pricingPhases
                         .pricingPhaseList?.[0]?.formattedPrice
                     : (product.data as RNIap.SubscriptionIOS)
                         ?.introductoryPrice ||
@@ -516,8 +517,8 @@ export const PricingPlans = ({
                         setBuying(true);
                         try {
                           if (!(await getPromo(value as string)))
-                            throw new Error("Error applying promo code");
-                          ToastEvent.show({
+                            throw new Error(strings.errorApplyingPromoCode());
+                          ToastManager.show({
                             heading: "Discount applied!",
                             type: "success",
                             context: "local"
@@ -525,7 +526,7 @@ export const PricingPlans = ({
                           setBuying(false);
                         } catch (e) {
                           setBuying(false);
-                          ToastEvent.show({
+                          ToastManager.show({
                             heading: "Promo code invalid or expired",
                             message: (e as Error).message,
                             type: "error",

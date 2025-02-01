@@ -21,16 +21,20 @@ import React, {
   useCallback,
   useRef,
   useEffect,
-  PropsWithChildren
+  PropsWithChildren,
+  useState
 } from "react";
 import { Box, FlexProps, Text } from "@theme-ui/components";
-import { getPosition } from "../../utils/position";
-import { MenuButtonItem, MenuItem } from "./types";
-import { useFocus } from "./use-focus";
-import { MenuSeparator } from "./menu-separator";
-import { MenuButton } from "./menu-button";
-import { PopupPresenter, PopupPresenterProps } from "../popup-presenter";
-import { ScrollContainer } from "../scroll-container";
+import { getPosition } from "../../utils/position.js";
+import { LazyMenuItemsLoader, MenuButtonItem, MenuItem } from "./types.js";
+import { useFocus } from "./use-focus.js";
+import { MenuSeparator } from "./menu-separator.js";
+import { MenuButton } from "./menu-button.js";
+import {
+  PopupPresenter,
+  PopupPresenterProps
+} from "../popup-presenter/index.js";
+import { ScrollContainer } from "../scroll-container/index.js";
 
 type MenuProps = MenuContainerProps & {
   items?: MenuItem[];
@@ -68,7 +72,7 @@ export function Menu(props: MenuProps) {
     const item = items[focusIndex];
     if (!item || !subMenuRef.current) return;
 
-    const menuItemElement = document.getElementById(`${item.key}-menu-item`);
+    const menuItemElement = document.getElementById(`menu-item-${item.key}`);
     if (!menuItemElement) return;
 
     if (!isSubmenuOpen) {
@@ -90,10 +94,18 @@ export function Menu(props: MenuProps) {
   return (
     <>
       <MenuContainer {...containerProps}>
-        {items.map((item, index) => {
+        {items.map(function mapper(item, index) {
           if (item.isHidden) return null;
 
           switch (item.type) {
+            case "lazy-loader":
+              return (
+                <LazyLoader
+                  key={item.key}
+                  item={item}
+                  mapper={(item, itemIndex) => mapper(item, itemIndex + index)}
+                />
+              );
             case "separator":
               return <MenuSeparator key={item.key} />;
             case "button":
@@ -183,6 +195,7 @@ function MenuContainer(props: PropsWithChildren<MenuContainerProps>) {
         boxShadow: "menu",
         border: "1px solid var(--border)",
         minWidth: 220,
+        maxHeight: "80vh",
         ...sx
       }}
       {...flexProps}
@@ -214,7 +227,7 @@ export type MenuPresenterProps = Omit<
   PopupPresenterProps,
   "movable" | "scope"
 > &
-  MenuProps;
+  MenuProps & { container?: HTMLElement };
 export function MenuPresenter(props: PropsWithChildren<MenuPresenterProps>) {
   const {
     items = [],
@@ -224,8 +237,26 @@ export function MenuPresenter(props: PropsWithChildren<MenuPresenterProps>) {
     blocking,
     focusOnRender,
     isMobile,
+    container,
     ...restProps
   } = props;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    console.log(isOpen);
+    function onContextMenu(e: MouseEvent) {
+      console.log("CONTEXT", e);
+      if (
+        e.target instanceof HTMLElement &&
+        !!e.target.closest(".ReactModal__Overlay")
+      )
+        onClose();
+    }
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, [isOpen, onClose]);
 
   return (
     <PopupPresenter
@@ -234,6 +265,7 @@ export function MenuPresenter(props: PropsWithChildren<MenuPresenterProps>) {
       isOpen={isOpen}
       onClose={onClose}
       blocking={blocking}
+      container={container}
       focusOnRender={focusOnRender}
       isMobile={isMobile}
     >
@@ -246,6 +278,32 @@ export function MenuPresenter(props: PropsWithChildren<MenuPresenterProps>) {
   );
 }
 
-export * from "./types";
-export * from "./menu-button";
-export * from "./menu-separator";
+function LazyLoader(props: {
+  item: LazyMenuItemsLoader;
+  mapper: (item: MenuItem, index: number) => JSX.Element | null;
+}) {
+  const { item, mapper } = props;
+  const [isLoading, setIsLoading] = useState(true);
+  const [items, setItems] = useState<MenuItem[]>([]);
+
+  useEffect(() => {
+    (async function () {
+      setItems(await item.items());
+      setIsLoading(false);
+    })();
+  }, [item]);
+
+  return isLoading ? (
+    item.loader ? (
+      <>{item.loader}</>
+    ) : (
+      <></>
+    )
+  ) : (
+    <>{items.map(mapper)}</>
+  );
+}
+
+export * from "./types.js";
+export * from "./menu-button.js";
+export * from "./menu-separator.js";

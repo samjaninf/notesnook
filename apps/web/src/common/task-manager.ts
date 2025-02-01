@@ -17,11 +17,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { ProgressDialog } from "../dialogs/progress-dialog";
 import { removeStatus, updateStatus } from "../hooks/use-status";
-import { showProgressDialog } from "./dialog-controller";
 
 type TaskType = "status" | "modal";
-type TaskAction<T> = (report: ProgressReportCallback) => T | Promise<T>;
+export type TaskAction<T> = (report: ProgressReportCallback) => T | Promise<T>;
 type BaseTaskDefinition<TTaskType extends TaskType, TReturnType> = {
   type: TTaskType;
   action: TaskAction<TReturnType>;
@@ -31,6 +31,7 @@ type StatusTaskDefinition<TReturnType> = BaseTaskDefinition<
   "status",
   TReturnType
 > & {
+  title: string;
   id: string;
 };
 
@@ -39,7 +40,7 @@ type ModalTaskDefinition<TReturnType> = BaseTaskDefinition<
   TReturnType
 > & {
   title: string;
-  subtitle: string;
+  subtitle?: string;
 };
 
 type TaskDefinition<TReturnType> =
@@ -55,10 +56,14 @@ type TaskProgress = {
 type ProgressReportCallback = (progress: TaskProgress) => void;
 
 export class TaskManager {
-  static async startTask<T>(task: TaskDefinition<T>): Promise<T> {
+  static async startTask<T>(task: TaskDefinition<T>): Promise<T | Error> {
     switch (task.type) {
       case "status": {
         const statusTask = task;
+        updateStatus({
+          key: statusTask.id,
+          status: task.title
+        });
         const result = await statusTask.action((progress) => {
           let percentage: number | undefined = undefined;
           if (progress.current && progress.total)
@@ -74,11 +79,11 @@ export class TaskManager {
         return result;
       }
       case "modal": {
-        return await showProgressDialog<T>({
+        return (await ProgressDialog.show({
           title: task.title,
           subtitle: task.subtitle,
           action: task.action
-        });
+        })) as T;
       }
     }
   }

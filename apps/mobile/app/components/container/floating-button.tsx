@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useThemeColors } from "@notesnook/theme";
+import { useRoute } from "@react-navigation/native";
 import React, { useCallback, useEffect } from "react";
 import { Keyboard, View } from "react-native";
 import Animated, {
@@ -33,26 +34,25 @@ import { useSelectionStore } from "../../stores/use-selection-store";
 import { useSettingStore } from "../../stores/use-setting-store";
 import { getElevationStyle } from "../../utils/elevation";
 import { SIZE, normalize } from "../../utils/size";
-import NativeTooltip from "../../utils/tooltip";
-import { PressableButton } from "../ui/pressable";
+import { Pressable } from "../ui/pressable";
 
-interface FloatingButton {
-  title?: string;
+interface FloatingButtonProps {
   onPress: () => void;
   color?: string;
+  shouldShow?: boolean;
   alwaysVisible?: boolean;
 }
 
 const FloatingButton = ({
-  title,
   onPress,
   color,
   alwaysVisible = false
-}: FloatingButton) => {
+}: FloatingButtonProps) => {
   const { colors } = useThemeColors();
   const deviceMode = useSettingStore((state) => state.deviceMode);
   const selectionMode = useSelectionStore((state) => state.selectionMode);
   const translate = useSharedValue(0);
+  const route = useRoute();
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -115,18 +115,13 @@ const FloatingButton = ({
         animatedStyle
       ]}
     >
-      <PressableButton
+      <Pressable
         testID={notesnook.buttons.add}
         type="accent"
-        accentColor={colors.static[color as keyof typeof colors.static]}
-        customStyle={{
+        accentColor={color}
+        style={{
           ...getElevationStyle(5),
           borderRadius: 100
-        }}
-        onLongPress={(event) => {
-          if (title) {
-            NativeTooltip.show(event, title, NativeTooltip.POSITIONS.LEFT);
-          }
         }}
         onPress={onPress}
       >
@@ -139,12 +134,18 @@ const FloatingButton = ({
           }}
         >
           <Icon
-            name={title === "Clear all trash" ? "delete" : "plus"}
+            name={
+              route.name === "Notebooks"
+                ? "notebook-plus"
+                : route.name === "Trash"
+                ? "delete"
+                : "plus"
+            }
             color={colors.primary.accentForeground}
             size={SIZE.xxl}
           />
         </View>
-      </PressableButton>
+      </Pressable>
     </Animated.View>
   );
 };
