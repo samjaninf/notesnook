@@ -17,16 +17,20 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import type { Attachment } from "@notesnook/editor/dist/extensions/attachment/index";
-import type { ImageAttributes } from "@notesnook/editor/dist/extensions/image/index";
+import { Note } from "@notesnook/core";
+import type {
+  Attachment,
+  ImageAttributes,
+  LinkAttributes
+} from "@notesnook/editor";
 import { createRef, RefObject } from "react";
 import { Platform } from "react-native";
 import { EdgeInsets } from "react-native-safe-area-context";
 import WebView from "react-native-webview";
 import { db } from "../../../common/database";
 import { sleep } from "../../../utils/time";
-import { NoteType } from "../../../utils/types";
 import { Settings } from "./types";
+import { useTabStore } from "./use-tab-store";
 import { getResponse, randId, textInput } from "./utils";
 
 type Action = { job: string; id: string };
@@ -35,13 +39,10 @@ async function call(webview: RefObject<WebView | undefined>, action?: Action) {
   if (!webview.current || !action) return;
   setImmediate(() => webview.current?.injectJavaScript(action.job));
   const response = await getResponse(action.id);
-  // if (!response) {
-  //   console.warn("webview job failed", action.id);
-  // }
   return response ? response.value : response;
 }
 
-const fn = (fn: string) => {
+const fn = (fn: string, name?: string) => {
   const id = randId("fn_");
   return {
     job: `(async () => {
@@ -52,7 +53,7 @@ const fn = (fn: string) => {
         post("${id}",response);
       } catch(e) {
         const DEV_MODE = ${__DEV__};
-        if (DEV_MODE && typeof logger !== "undefined") logger('error', "webview: ", e.message, e.stack);
+        if (DEV_MODE && typeof logger !== "undefined") logger('error', "webview: ", e.message, e.stack, "${name}");
       }
       return true;
     })();true;`,
@@ -68,70 +69,76 @@ class Commands {
     this.previousSettings = null;
   }
 
-  async doAsync<T>(job: string) {
+  async doAsync<T>(job: string, name?: string) {
     if (!this.ref.current) return false;
-    return call(this.ref, fn(job)) as Promise<T>;
+    return call(this.ref, fn(job, name)) as Promise<T>;
   }
 
-  focus = async () => {
+  async sendCommand<T>(command: string, ...args: any[]) {
+    return this.doAsync(
+      `response = globalThis.commands.${command}(${args
+        .map((arg) =>
+          typeof arg === "string" ? `"${arg}"` : JSON.stringify(arg)
+        )
+        .join(",")})`,
+      command
+    );
+  }
+
+  focus = async (tabId: string) => {
     if (!this.ref.current) return;
+
+    const locked = useTabStore.getState().getTab(tabId)?.session?.locked;
     if (Platform.OS === "android") {
-      //this.ref.current?.requestFocus();
       setTimeout(async () => {
+        if (
+          locked &&
+          useTabStore.getState().biometryAvailable &&
+          useTabStore.getState().biometryEnrolled
+        )
+          return;
+
         if (!this.ref) return;
         textInput.current?.focus();
-        await this.doAsync("editor.commands.focus()");
+        await this.sendCommand("focus", tabId, locked);
         this.ref?.current?.requestFocus();
       }, 1);
     } else {
       await sleep(400);
-      await this.doAsync("editor.commands.focus()");
+      await this.sendCommand("focus", tabId, locked);
     }
   };
 
-  blur = async () =>
-    await this.doAsync(`
-  editor && editor.commands.blur();
-  typeof globalThis.editorTitle !== "undefined" && editorTitle.current && editorTitle.current.blur();
-  `);
+  blur = async (tabId: string) => this.sendCommand("blur", tabId);
 
-  clearContent = async () => {
+  clearContent = async (tabId: string) => {
     this.previousSettings = null;
-    await this.doAsync(
-      `editor.commands.blur();
-typeof globalThis.editorTitle !== "undefined" && editorTitle.current && editorTitle.current?.blur();
-if (editorController.content) editorController.content.current = null;
-editorController.onUpdate();
-editorController.setTitle(null);
-editorController.countWords(0);
-typeof globalThis.statusBar !== "undefined" && statusBar.current.set({date:"",saved:""});
-        `
-    );
+    await this.sendCommand("clearContent", tabId);
   };
 
   setSessionId = async (id: string | null) =>
-    await this.doAsync(`globalThis.sessionId = "${id}";`);
+    await this.sendCommand("setSessionId", id);
 
-  setStatus = async (date: string | undefined, saved: string) =>
-    await this.doAsync(
-      `typeof globalThis.statusBar !== "undefined" && statusBar.current.set({date:"${date}",saved:"${saved}"})`
+  setStatus = async (
+    date: string | undefined,
+    saved: string,
+    tabId: string
+  ) => {
+    this.sendCommand("setStatus", date, saved, tabId);
+  };
+
+  setPlaceholder = async (placeholder: string) => {};
+
+  setLoading = async (loading?: boolean, tabId?: string) => {
+    this.sendCommand(
+      "setLoading",
+      loading,
+      tabId === undefined ? useTabStore.getState().currentTab : tabId
     );
-
-  setPlaceholder = async (placeholder: string) => {
-    await this.doAsync(`
-    const element = document.querySelector(".is-editor-empty");
-    if (element) {
-      element.setAttribute("data-placeholder","${placeholder}");
-    }
-    `);
   };
 
   setInsets = async (insets: EdgeInsets) => {
-    await this.doAsync(`
-      if (typeof safeAreaController !== "undefined") {
-        safeAreaController.update(${JSON.stringify(insets)}) 
-      }
-    `);
+    this.sendCommand("setInsets", insets);
   };
 
   updateSettings = async (settings?: Partial<Settings>) => {
@@ -140,13 +147,7 @@ typeof globalThis.statusBar !== "undefined" && statusBar.current.set({date:"",sa
       ...this.previousSettings,
       ...settings
     };
-    await this.doAsync(`
-      if (typeof globalThis.settingsController !== "undefined") {
-        globalThis.settingsController.update(${JSON.stringify(
-          this.previousSettings
-        )}) 
-      }
-    `);
+    this.sendCommand("updateSettings", settings);
   };
 
   setSettings = async (settings?: Partial<Settings>) => {
@@ -159,112 +160,82 @@ typeof globalThis.statusBar !== "undefined" && statusBar.current.set({date:"",sa
         return;
       }
     }
-    await this.doAsync(`
-      if (typeof globalThis.settingsController !== "undefined") {
-        globalThis.settingsController.update(${JSON.stringify(settings)}) 
-      }
-    `);
+    this.sendCommand("setSettings", settings);
   };
 
-  setTags = async (note: NoteType | null | undefined) => {
+  setTags = async (note: Note | null | undefined) => {
     if (!note) return;
-    const tags = !note.tags
-      ? []
-      : note.tags
-          .map((t: string) =>
-            db.tags?.tag(t)
-              ? { title: db.tags.tag(t).title, alias: db.tags.tag(t).alias }
-              : null
-          )
-          .filter((t) => t !== null);
-    await this.doAsync(`
-    if (typeof editorTags !== "undefined" && editorTags.current) {
-      editorTags.current.setTags(${JSON.stringify(tags)});
-    }
-  `);
+    useTabStore.getState().forEachNoteTab(note.id, async (tab) => {
+      const tabId = tab.id;
+      const tags = await db.relations.to(note, "tag").resolve();
+      await this.sendCommand("setTags", tabId, tags);
+    });
   };
 
-  clearTags = async () => {
-    await this.doAsync(`
-    if (typeof editorTags !== "undefined" && editorTags.current) {
-      editorTags.current.setTags([]);
-    }
-  `);
+  clearTags = async (tabId: string) => {
+    await this.sendCommand("clearTags", tabId);
   };
 
-  insertAttachment = async (attachment: Attachment) => {
-    await this.doAsync(
-      `editor && editor.commands.insertAttachment(${JSON.stringify(
-        attachment
-      )})`
-    );
+  insertAttachment = async (attachment: Attachment, tabId: string) => {
+    await this.sendCommand("insertAttachment", attachment, tabId);
   };
 
-  setAttachmentProgress = async (attachmentProgress: Partial<Attachment>) => {
-    await this.doAsync(
-      `editor && editor.commands.updateAttachment(${JSON.stringify(
-        attachmentProgress
-      )}, {
-        preventUpdate: true,
-        query: (attachment) => {
-          return attachment.hash === "${attachmentProgress.hash}";
-        }
-      })`
-    );
+  setAttachmentProgress = async (
+    attachmentProgress: Partial<Attachment>,
+    tabId: string
+  ) => {
+    await this.sendCommand("setAttachmentProgress", attachmentProgress, tabId);
   };
 
   insertImage = async (
     image: Omit<ImageAttributes, "bloburl"> & {
       dataurl: string;
-    }
+    },
+    tabId: string
   ) => {
-    await this.doAsync(
-      `const image = toBlobURL("${image.dataurl}", "${image.hash}");
-      editor && editor.commands.insertImage({
-        ...${JSON.stringify({
-          ...image,
-          dataurl: undefined
-        })},
-        bloburl: image
-      })`
-    );
-  };
-
-  updateWebclip = async ({ src, hash }: Partial<ImageAttributes>) => {
-    await this.doAsync(
-      `editor && editor.commands.updateWebClip(${JSON.stringify({
-        hash
-      })},${JSON.stringify({ src })})`
-    );
-  };
-
-  updateImage = async ({
-    hash,
-    dataurl
-  }: Partial<Omit<ImageAttributes, "bloburl">> & {
-    dataurl: string;
-  }) => {
-    await this.doAsync(
-      `const image = toBlobURL("${dataurl}", "${hash}");
-      editor && editor.commands.updateImage(${JSON.stringify({
-        hash
-      })}, {
-        ...${JSON.stringify({ hash, preventUpdate: true })},
-        bloburl: image
-      })`
-    );
+    await this.sendCommand("insertImage", image, tabId);
   };
 
   handleBack = async () => {
-    return this.doAsync<boolean>(
-      'response = window.dispatchEvent(new Event("handleBackPress",{cancelable:true}));'
-    );
+    return this.sendCommand("handleBack");
   };
 
   keyboardShown = async (keyboardShown: boolean) => {
-    return this.doAsync(`globalThis['keyboardShown']=${keyboardShown};`);
+    return this.sendCommand("keyboardShown", keyboardShown);
   };
-  //todo add replace image function
+
+  getTableOfContents = async () => {
+    const tabId = useTabStore.getState().currentTab;
+    return this.sendCommand("getTableOfContents", tabId);
+  };
+
+  focusPassInput = async () => {
+    const tabId = useTabStore.getState().currentTab;
+    return this.sendCommand("focusPassInput", tabId);
+  };
+
+  blurPassInput = async () => {
+    const tabId = useTabStore.getState().currentTab;
+    return this.sendCommand("blurPassInput", tabId);
+  };
+
+  createInternalLink = async (
+    attributes: LinkAttributes,
+    resolverId: string
+  ) => {
+    if (!resolverId) return;
+    return this.sendCommand("createInternalLink", attributes, resolverId);
+  };
+
+  dismissCreateInternalLinkRequest = async (resolverId: string) => {
+    if (!resolverId) return;
+    return this.sendCommand("dismissCreateInternalLinkRequest", resolverId);
+  };
+
+  scrollIntoViewById = async (id: string) => {
+    const tabId = useTabStore.getState().currentTab;
+    return this.sendCommand("scrollIntoViewById", id, tabId);
+  };
 }
 
 export default Commands;

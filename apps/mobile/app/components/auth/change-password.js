@@ -23,15 +23,19 @@ import { db } from "../../common/database";
 import {
   eSendEvent,
   presentSheet,
-  ToastEvent
+  ToastManager
 } from "../../services/event-manager";
 import { useUserStore } from "../../stores/use-user-store";
-import { eCloseSheet } from "../../utils/events";
+import { eCloseSheet, eOpenRecoveryKeyDialog } from "../../utils/events";
 import DialogHeader from "../dialog/dialog-header";
 import { Button } from "../ui/button";
 import Input from "../ui/input";
 import { Notice } from "../ui/notice";
 import Seperator from "../ui/seperator";
+import { Dialog } from "../dialog";
+import BackupService from "../../services/backup";
+import { sleep } from "../../utils/time";
+import { strings } from "@notesnook/intl";
 
 export const ChangePassword = () => {
   const passwordInputRef = useRef();
@@ -45,18 +49,18 @@ export const ChangePassword = () => {
 
   const changePassword = async () => {
     if (!user?.isEmailConfirmed) {
-      ToastEvent.show({
-        heading: "Email not confirmed",
-        message: "Please confirm your email to change account password",
+      ToastManager.show({
+        heading: strings.emailNotConfirmed(),
+        message: strings.emailNotConfirmedDesc(),
         type: "error",
         context: "local"
       });
       return;
     }
     if (error || !oldPassword.current || !password.current) {
-      ToastEvent.show({
-        heading: "All fields required",
-        message: "Fill all the fields and try again.",
+      ToastManager.show({
+        heading: strings.allFieldsRequired(),
+        message: strings.allFieldsRequiredDesc(),
         type: "error",
         context: "local"
       });
@@ -64,19 +68,29 @@ export const ChangePassword = () => {
     }
     setLoading(true);
     try {
-      await db.user.clearSessions();
+      const result = await BackupService.run(
+        false,
+        "change-password-dialog",
+        "partial"
+      );
+      if (result.error) {
+        throw new Error(strings.backupFailed() + `: ${result.error}`);
+      }
+
       await db.user.changePassword(oldPassword.current, password.current);
-      ToastEvent.show({
-        heading: "Account password updated",
+      ToastManager.show({
+        heading: strings.passwordChangedSuccessfully(),
         type: "success",
         context: "global"
       });
       setLoading(false);
       eSendEvent(eCloseSheet);
+      await sleep(300);
+      eSendEvent(eOpenRecoveryKeyDialog);
     } catch (e) {
       setLoading(false);
-      ToastEvent.show({
-        heading: "Failed to change password",
+      ToastManager.show({
+        heading: strings.passwordChangeFailed(),
         message: e.message,
         type: "error",
         context: "local"
@@ -92,10 +106,8 @@ export const ChangePassword = () => {
         padding: 12
       }}
     >
-      <DialogHeader
-        title="Change password"
-        paragraph="Enter your old and new passwords"
-      />
+      <Dialog context="change-password-dialog" />
+      <DialogHeader title={strings.changePassword()} />
       <Seperator />
 
       <Input
@@ -109,7 +121,7 @@ export const ChangePassword = () => {
         autoComplete="password"
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder="Old Password"
+        placeholder={strings.oldPassword()}
       />
 
       <Input
@@ -118,20 +130,21 @@ export const ChangePassword = () => {
           password.current = value;
         }}
         onErrorCheck={(e) => setError(e)}
-        returnKeyLabel="Next"
+        returnKeyLabel={strings.next()}
         returnKeyType="next"
         secureTextEntry
         validationType="password"
         autoComplete="password"
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder="New password"
+        placeholder={strings.newPassword()}
       />
 
-      <Notice
-        text="Changing password is a non-undoable process. You will be logged out from all your devices. Please make sure you do not close the app while your password is changing and have good internet connection."
-        type="alert"
-      />
+      <Notice text={strings.changePasswordNotice()} type="alert" />
+
+      <View style={{ height: 10 }} />
+
+      <Notice text={strings.changePasswordNotice2()} type="alert" />
 
       <Button
         style={{
@@ -141,7 +154,7 @@ export const ChangePassword = () => {
         loading={loading}
         onPress={changePassword}
         type="accent"
-        title={loading ? null : "I understand, change my password"}
+        title={loading ? null : strings.changePasswordConfirm()}
       />
     </View>
   );

@@ -23,6 +23,7 @@ import { useStore as useAppStore } from "../../stores/app-store";
 import { NoticesData } from "../../common/notices";
 import { Dismiss } from "../icons";
 import Config from "../../utils/config";
+import { strings } from "@notesnook/intl";
 
 function Notice() {
   const notices = useAppStore((store) => store.notices);
@@ -31,6 +32,7 @@ function Notice() {
     if (!notices) return null;
     return notices.slice().sort((a, b) => a.priority - b.priority)[0];
   }, [notices]);
+
   if (!notice) return null;
   const NoticeData = NoticesData[notice.type];
   return (
@@ -39,8 +41,8 @@ function Notice() {
         cursor: "pointer",
         borderRadius: "default",
         ":hover": { bg: "hover" },
-        alignItems: "center",
-        minWidth: 250
+        alignItems: "center"
+        // minWidth: 250
       }}
       p={1}
       onClick={() => NoticeData.action()}
@@ -52,11 +54,30 @@ function Notice() {
           color="accent"
           sx={{ bg: "shade", mr: 2, p: 2, borderRadius: 80 }}
         />
-        <Flex variant="columnCenter" sx={{ alignItems: "flex-start" }}>
-          <Text variant="body" sx={{ fontSize: "body" }}>
+        <Flex
+          variant="columnCenter"
+          sx={{ alignItems: "flex-start", overflow: "hidden" }}
+        >
+          <Text
+            variant="body"
+            sx={{
+              fontSize: "body",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis"
+            }}
+          >
             {NoticeData.title}
           </Text>
-          <Text variant="subBody" sx={{ display: "block" }}>
+          <Text
+            variant="subBody"
+            sx={{
+              display: "block",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis"
+            }}
+          >
             {NoticeData.subtitle}
           </Text>
         </Flex>
@@ -66,7 +87,7 @@ function Notice() {
           onClick={(e) => {
             e.stopPropagation();
             const dontShowAgain = window.confirm(
-              "Don't show again on this device?"
+              strings.dontShowAgainConfirm()
             );
             dismissNotices(notice);
             if (dontShowAgain) {

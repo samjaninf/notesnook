@@ -17,31 +17,26 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { strings } from "@notesnook/intl";
 import { useThemeColors } from "@notesnook/theme";
 import React from "react";
-import {
-  Linking,
-  ScrollView,
-  TouchableOpacity,
-  useWindowDimensions,
-  View
-} from "react-native";
+import { Linking, ScrollView, useWindowDimensions, View } from "react-native";
 import { SwiperFlatList } from "react-native-swiper-flatlist";
-import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import { getElevationStyle } from "../../utils/elevation";
 import useGlobalSafeAreaInsets from "../../hooks/use-global-safe-area-insets";
+import { eSendEvent } from "../../services/event-manager";
+import Navigation from "../../services/navigation";
 import SettingsService from "../../services/settings";
 import { useSettingStore } from "../../stores/use-setting-store";
+import { getElevationStyle } from "../../utils/elevation";
+import { eOpenLoginDialog } from "../../utils/events";
 import { SIZE } from "../../utils/size";
+import { AuthMode } from "../auth";
 import { Button } from "../ui/button";
 import Heading from "../ui/typography/heading";
 import Paragraph from "../ui/typography/paragraph";
 
 const Intro = ({ navigation }) => {
   const { colors } = useThemeColors();
-  const isTelemetryEnabled = useSettingStore(
-    (state) => state.settings.telemetry
-  );
   const { width, height } = useWindowDimensions();
   const deviceMode = useSettingStore((state) => state.deviceMode);
   const insets = useGlobalSafeAreaInsets();
@@ -88,18 +83,20 @@ const Intro = ({ navigation }) => {
         >
           {item.headings?.map((heading) => (
             <Heading
-              key={heading}
+              key={heading()}
               style={{
                 marginBottom: 5
               }}
               extraBold
               size={SIZE.xxl}
             >
-              {heading}
+              {heading()}
             </Heading>
           ))}
 
-          {item.body ? <Paragraph size={SIZE.sm}>{item.body}</Paragraph> : null}
+          {item.body ? (
+            <Paragraph size={SIZE.sm}>{item.body()}</Paragraph>
+          ) : null}
 
           {item.tesimonial ? (
             <Paragraph
@@ -111,7 +108,7 @@ const Intro = ({ navigation }) => {
                 Linking.openURL(item.link);
               }}
             >
-              {item.tesimonial} — {item.user}
+              {item.tesimonial()} — {item.user}
             </Paragraph>
           ) : null}
         </View>
@@ -131,7 +128,6 @@ const Intro = ({ navigation }) => {
         style={{
           width: deviceMode !== "mobile" ? width / 2 : "100%",
           backgroundColor: colors.secondary.background,
-          marginBottom: 20,
           borderBottomWidth: 1,
           borderBottomColor: colors.primary.border,
           alignSelf: deviceMode !== "mobile" ? "center" : undefined,
@@ -141,7 +137,7 @@ const Intro = ({ navigation }) => {
           marginTop: deviceMode !== "mobile" ? 50 : null,
           paddingTop: insets.top + 10,
           paddingBottom: insets.top + 10,
-          minHeight: height * 0.7
+          minHeight: height * 0.7 - (insets.top + insets.bottom)
         }}
       >
         <SwiperFlatList
@@ -151,26 +147,7 @@ const Intro = ({ navigation }) => {
           index={0}
           useReactNativeGestureHandler={true}
           showPagination
-          data={[
-            {
-              headings: ["Open source.", "End to end encrypted.", "Private."],
-              body: "Write notes with freedom, no spying, no tracking."
-            },
-            {
-              headings: [
-                "Privacy for everyone",
-                "— not just the",
-                "privileged few"
-              ],
-              body: "Your privacy matters to us, no matter who you are. In a world where everyone is trying to spy on you, Notesnook encrypts all your data before it leaves your device. With Notesnook no one can ever sell your data again."
-            },
-            {
-              tesimonial:
-                "You simply cannot get any better of a note taking app than @notesnook. The UI is clean and slick, it is feature rich, encrypted, reasonably priced (esp. for students & educators) & open source",
-              link: "https://twitter.com/andrewsayer/status/1637817220113002503",
-              user: "@andrewsayer on Twitter"
-            }
-          ]}
+          data={strings.introData}
           paginationActiveColor={colors.primary.accent}
           paginationStyleItem={{
             width: 10,
@@ -193,9 +170,15 @@ const Intro = ({ navigation }) => {
         <Button
           width={250}
           onPress={async () => {
-            navigation.navigate("AppLock", {
-              welcome: true
-            });
+            eSendEvent(eOpenLoginDialog, AuthMode.welcomeSignup);
+            setTimeout(() => {
+              SettingsService.set({
+                introCompleted: true
+              });
+              Navigation.replace("Notes", {
+                canGoBack: false
+              });
+            }, 1000);
           }}
           style={{
             paddingHorizontal: 24,
@@ -205,46 +188,8 @@ const Intro = ({ navigation }) => {
           }}
           fontSize={SIZE.md}
           type="accent"
-          title="Get started"
+          title={strings.getStarted()}
         />
-
-        <TouchableOpacity
-          activeOpacity={1}
-          style={{
-            flexDirection: "row",
-            alignSelf: "center",
-            width: "90%",
-            marginBottom: 12,
-            paddingHorizontal: 12,
-            justifyContent: "center",
-            padding: 12,
-            maxWidth: 500
-          }}
-          onPress={() => {
-            SettingsService.set({ telemetry: !isTelemetryEnabled });
-          }}
-        >
-          <Icon
-            size={SIZE.md}
-            name={
-              isTelemetryEnabled ? "checkbox-marked" : "checkbox-blank-outline"
-            }
-            color={
-              isTelemetryEnabled ? colors.primary.accent : colors.primary.icon
-            }
-          />
-
-          <Paragraph
-            style={{
-              flexShrink: 1,
-              marginLeft: 6
-            }}
-            size={SIZE.xs}
-          >
-            Help improve Notesnook by sending completely anonymized{" "}
-            <Heading size={SIZE.xs}>private analytics and bug reports.</Heading>
-          </Paragraph>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );

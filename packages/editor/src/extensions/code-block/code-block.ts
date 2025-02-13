@@ -27,14 +27,15 @@ import {
   Selection
 } from "prosemirror-state";
 import { ResolvedPos, Node as ProsemirrorNode, Slice } from "prosemirror-model";
-import { CodeblockComponent } from "./component";
-import { HighlighterPlugin } from "./highlighter";
-import { createNodeView } from "../react";
+import { CodeblockComponent } from "./component.js";
+import { HighlighterPlugin } from "./highlighter.js";
+import { createNodeView } from "../react/index.js";
 import detectIndent from "detect-indent";
 import redent from "redent";
 import stripIndent from "strip-indent";
 import { nanoid } from "nanoid";
 import Languages from "./languages.json";
+import { CaretPosition, CodeLine } from "./utils.js";
 
 interface Indent {
   type: "tab" | "space";
@@ -234,11 +235,20 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
         },
       toggleCodeBlock:
         (attributes) =>
-        ({ commands }) => {
-          return commands.toggleNode(this.name, "paragraph", {
-            ...attributes,
-            id: createCodeblockId()
-          });
+        ({ commands, state, tr }) => {
+          const isInsideCodeBlock = this.editor.isActive(this.type.name);
+          if (!isInsideCodeBlock) {
+            const { from, to } = state.selection;
+            const text = state.doc.textBetween(from, to, "\n");
+            tr.replaceSelectionWith(
+              this.type.create(
+                { ...attributes, id: createCodeblockId() },
+                text ? state.schema.text(text) : null
+              )
+            );
+            return commands.setTextSelection({ from, to: tr.mapping.map(to) });
+          }
+          return commands.clearNodes();
         },
       changeCodeBlockIndentation:
         (options) =>
@@ -449,7 +459,9 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
             if (!event.clipboardData) {
               return false;
             }
-            const { isCode, language } = detectCodeBlock(event.clipboardData);
+            const { isCode, language, isBlock } = detectCodeBlock(
+              event.clipboardData
+            );
 
             const isInsideCodeBlock = this.editor.isActive(this.type.name);
             if (!isInsideCodeBlock && !isCode) {
@@ -470,6 +482,7 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
             const { tr } = view.state;
 
             const isInlineCode =
+              !isBlock &&
               indent.code.length < 80 &&
               indent.code.split(/[\r\n]/).length === 1;
             if (isInlineCode && !isInsideCodeBlock) {
@@ -517,10 +530,19 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
 
   addNodeView() {
     return createNodeView(CodeblockComponent, {
-      contentDOMFactory: () => {
+      contentDOMFactory: (node) => {
+        const languageDefinition = Languages.find(
+          (l) =>
+            l.filename === node.attrs.language ||
+            l.alias?.some((a) => a === node.attrs.language)
+        );
         const content = document.createElement("pre");
         content.classList.add("node-content-wrapper");
-        content.classList.add("language-xyz");
+        content.classList.add(
+          `language-${
+            languageDefinition?.filename ?? languageDefinition?.title ?? "xyz"
+          }`.replace(/\s/, "-")
+        );
         content.style.whiteSpace = "pre";
         // caret is not visible if content element width is 0px
         content.style.minWidth = "20px";
@@ -536,41 +558,6 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
     });
   }
 });
-
-export type CaretPosition = {
-  column: number;
-  line: number;
-  selected?: number;
-  total: number;
-  from: number;
-};
-export function toCaretPosition(
-  selection: Selection,
-  lines?: CodeLine[]
-): CaretPosition | undefined {
-  const { $from, $to, $head } = selection;
-  if ($from.parent.type.name !== CodeBlock.name) return;
-  lines = lines || getLines($from.parent);
-
-  for (const line of lines) {
-    if ($head.pos >= line.from && $head.pos <= line.to) {
-      const lineLength = line.length + 1;
-      return {
-        line: line.index + 1,
-        column: lineLength - (line.to - $head.pos),
-        selected: $to.pos - $from.pos,
-        total: lines.length,
-        from: line.from
-      };
-    }
-  }
-  return;
-}
-
-export function getLines(node: ProsemirrorNode) {
-  const { lines } = node.attrs as CodeBlockAttributes;
-  return lines || [];
-}
 
 function exitOnTripleEnter(editor: Editor, $from: ResolvedPos) {
   const isAtEnd = $from.parentOffset === $from.parent.nodeSize - 2;
@@ -597,10 +584,10 @@ function indentOnEnter(editor: Editor, $from: ResolvedPos, options: Indent) {
 
   return editor
     .chain()
-    .insertContent(`${newline}${indentation}`, {
+    .newlineInCode()
+    .insertContent(`${indentation}`, {
       parseOptions: { preserveWhitespace: true }
     })
-    .focus()
     .run();
 }
 
@@ -616,46 +603,6 @@ function getNewline($from: ResolvedPos, options: Indent) {
     newline: NEWLINE,
     indentation: indent({ amount: indentLength, type: options.type })
   };
-}
-
-type CodeLine = {
-  index: number;
-  from: number;
-  to: number;
-  length: number;
-  text: (length?: number) => string;
-};
-export function toCodeLines(code: string, pos: number): CodeLine[] {
-  const positions: CodeLine[] = [];
-
-  let start = 0;
-  let from = pos + 1;
-  let index = 0;
-  while (start <= code.length) {
-    let end = code.indexOf("\n", start);
-    if (end <= -1) end = code.length;
-
-    const lineLength = end - start;
-    const to = from + lineLength;
-    const lineStart = start;
-    positions.push({
-      index,
-      length: lineLength,
-      from,
-      to,
-      text: (length) => {
-        return code.slice(
-          lineStart,
-          length ? lineStart + length : lineStart + lineLength
-        );
-      }
-    });
-
-    from = to + 1;
-    start = end + 1;
-    ++index;
-  }
-  return positions;
 }
 
 function getSelectedLines(lines: CodeLine[], selection: Selection) {
@@ -741,6 +688,7 @@ function detectCodeBlock(dataTransfer: DataTransfer) {
 
   const document = new DOMParser().parseFromString(html, "text/html");
 
+  const isBlock = !!document.querySelector(".node-content-wrapper");
   const isGitHub = !!document.querySelector(
     ".react-code-text.react-code-line-contents"
   );
@@ -756,7 +704,11 @@ function detectCodeBlock(dataTransfer: DataTransfer) {
       ? inferLanguage(document.body.firstElementChild)
       : undefined);
 
-  return { isCode: isVSCode || isGitHub || !!language, language };
+  return {
+    isCode: isVSCode || isGitHub || !!language,
+    language,
+    isBlock
+  };
 }
 
 const LANGUAGE_CLASS_REGEX = /(?:language|lang|brush)[-:](\s+\w+|\w+)/;

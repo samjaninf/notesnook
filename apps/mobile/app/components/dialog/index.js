@@ -36,17 +36,23 @@ import DialogButtons from "./dialog-buttons";
 import DialogHeader from "./dialog-header";
 import { useCallback } from "react";
 import { Button } from "../ui/button";
+import { getContainerBorder } from "../../utils/colors";
+import { Notice } from "../ui/notice";
+import { strings } from "@notesnook/intl";
 
 export const Dialog = ({ context = "global" }) => {
   const { colors } = useThemeColors();
   const [visible, setVisible] = useState(false);
-  const [inputValue, setInputValue] = useState(null);
+  const [checked, setChecked] = useState(false);
+  const values = useRef({
+    inputValue: undefined
+  });
   const inputRef = useRef();
   const [dialogInfo, setDialogInfo] = useState({
     title: "",
     paragraph: "",
-    positiveText: "Done",
-    negativeText: "Cancel",
+    positiveText: strings.done(),
+    negativeText: strings.cancel(),
     positivePress: () => {},
     onClose: () => {},
     positiveType: "transparent",
@@ -58,9 +64,38 @@ export const Dialog = ({ context = "global" }) => {
     disableBackdropClosing: false,
     check: {
       info: "Check",
-      type: "transparent"
+      type: "transparent",
+      defaultValue: false
     }
   });
+
+  const onPressPositive = async () => {
+    if (dialogInfo.positivePress) {
+      inputRef.current?.blur();
+      let result = await dialogInfo.positivePress(
+        values.current.inputValue || dialogInfo.defaultValue,
+        checked
+      );
+      if (result === false) {
+        return;
+      }
+    }
+    setChecked(false);
+    values.current.inputValue = undefined;
+    setVisible(false);
+  };
+
+  const show = useCallback(
+    (data) => {
+      if (!data.context) data.context = "global";
+      if (data.context !== context) return;
+      setDialogInfo(data);
+      setChecked(data.check?.defaultValue);
+      values.current.inputValue = data.defaultValue;
+      setVisible(true);
+    },
+    [context]
+  );
 
   useEffect(() => {
     eSubscribeEvent(eOpenSimpleDialog, show);
@@ -70,43 +105,19 @@ export const Dialog = ({ context = "global" }) => {
       eUnSubscribeEvent(eOpenSimpleDialog, show);
       eUnSubscribeEvent(eCloseSimpleDialog, hide);
     };
-  }, [show]);
+  }, [hide, show]);
 
-  const onPressPositive = async () => {
-    if (dialogInfo.positivePress) {
-      inputRef.current?.blur();
-      let result = await dialogInfo.positivePress(
-        inputValue || dialogInfo.defaultValue
-      );
-      if (result === false) {
-        return;
-      }
-    }
-
-    hide();
-  };
-
-  const show = useCallback(
-    (data) => {
-      if (!data.context) data.context = "global";
-      if (data.context !== context) return;
-      setDialogInfo(data);
-      setVisible(true);
-      setInputValue(data.defaultValue);
-    },
-    [context]
-  );
-
-  const hide = () => {
-    setInputValue(null);
+  const hide = React.useCallback(() => {
+    setChecked(false);
+    values.current.inputValue = undefined;
     setVisible(false);
-  };
+    dialogInfo.onClose?.();
+  }, [dialogInfo]);
 
   const onNegativePress = async () => {
     if (dialogInfo.onClose) {
       await dialogInfo.onClose();
     }
-
     hide();
   };
 
@@ -116,7 +127,8 @@ export const Dialog = ({ context = "global" }) => {
     maxHeight: 450,
     borderRadius: 5,
     backgroundColor: colors.primary.background,
-    paddingTop: 12
+    paddingTop: 12,
+    ...getContainerBorder(colors.primary.border, 0.5)
   };
 
   return visible ? (
@@ -159,7 +171,7 @@ export const Dialog = ({ context = "global" }) => {
               fwdRef={inputRef}
               autoCapitalize="none"
               onChangeText={(value) => {
-                setInputValue(value);
+                values.current.inputValue = value;
               }}
               testID="input-value"
               secureTextEntry={dialogInfo.secureTextEntry}
@@ -167,7 +179,21 @@ export const Dialog = ({ context = "global" }) => {
               onSubmit={onPressPositive}
               returnKeyLabel="Done"
               returnKeyType="done"
+              keyboardType={dialogInfo.keyboardType || "default"}
               placeholder={dialogInfo.inputPlaceholder}
+            />
+          </View>
+        ) : null}
+
+        {dialogInfo?.notice ? (
+          <View
+            style={{
+              paddingHorizontal: 12
+            }}
+          >
+            <Notice
+              type={dialogInfo.notice.type || "information"}
+              text={dialogInfo.notice.text}
             />
           </View>
         ) : null}
@@ -176,10 +202,10 @@ export const Dialog = ({ context = "global" }) => {
           <>
             <Button
               onPress={() => {
-                setInputValue(!inputValue);
+                setChecked(!checked);
               }}
               icon={
-                inputValue
+                checked
                   ? "check-circle-outline"
                   : "checkbox-blank-circle-outline"
               }
@@ -187,9 +213,10 @@ export const Dialog = ({ context = "global" }) => {
                 justifyContent: "flex-start"
               }}
               height={35}
+              iconSize={20}
               width="100%"
               title={dialogInfo.check.info}
-              type={inputValue ? dialogInfo.check.type : "gray"}
+              type={checked ? dialogInfo.check.type || "plain" : "plain"}
             />
           </>
         ) : null}

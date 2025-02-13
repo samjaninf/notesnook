@@ -18,14 +18,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { test } from "vitest";
-import { createEditor, h } from "../../../../test-utils";
-import OrderedList from "../../ordered-list";
-import { ListItem } from "../../list-item";
-import { transformCopied } from "../index";
-import { Paragraph } from "../../paragraph";
-import { ClipboardDOMSerializer } from "../clipboard-dom-serializer";
-import { clipboardTextSerializer } from "../clipboard-text-serializer";
+import { createEditor, h } from "../../../../test-utils/index.js";
+import OrderedList from "../../ordered-list/index.js";
+import { ListItem } from "../../list-item/index.js";
+import { transformCopied } from "../index.js";
+import { Paragraph } from "../../paragraph/index.js";
+import { ClipboardDOMSerializer } from "../clipboard-dom-serializer.js";
+import { clipboardTextSerializer } from "../clipboard-text-serializer.js";
+import Link from "../../link/index.js";
 
+function cleanOutputHtml(html: string) {
+  return html.replaceAll(` xmlns="http://www.w3.org/1999/xhtml"`, "");
+}
 test("copied list items shouldn't contain extra newlines", (t) => {
   const { editor } = createEditor({
     initialContent: h("div", [
@@ -47,9 +51,11 @@ test("copied list items shouldn't contain extra newlines", (t) => {
     editor.view.state.schema
   );
   t.expect(
-    new XMLSerializer().serializeToString(
-      serializer.serializeFragment(
-        editor.state.doc.slice(0, editor.state.doc.nodeSize - 2).content
+    cleanOutputHtml(
+      new XMLSerializer().serializeToString(
+        serializer.serializeFragment(
+          editor.state.doc.slice(0, editor.state.doc.nodeSize - 2).content
+        )
       )
     )
   ).toBe(
@@ -77,7 +83,56 @@ test("copying a single list item shouldn't copy the list metadata", (t) => {
 
   t.expect(
     transformCopied(
-      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2)
+      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2),
+      editor.view
+    ).toJSON()
+  ).toMatchSnapshot();
+});
+
+test("copying text from a list item shouldn't add extra spaces at the end", (t) => {
+  const { editor } = createEditor({
+    initialContent: h("div", [
+      h("ol", [
+        h("li", [
+          h("p", ["I am ", h("a", ["Hello"], { href: "https://google.com/" })])
+        ])
+      ])
+    ]).innerHTML,
+    extensions: {
+      orderedList: OrderedList,
+      listItem: ListItem,
+      link: Link
+    }
+  });
+
+  t.expect(
+    transformCopied(
+      editor.state.doc.slice(
+        editor.state.doc.nodeSize - 10,
+        editor.state.doc.nodeSize - 2
+      ),
+      editor.view
+    ).toJSON()
+  ).toMatchSnapshot();
+});
+
+test("copying multiple lists shouldn't copy only the first list", (t) => {
+  const { editor } = createEditor({
+    initialContent: h("div", [
+      h("ol", [h("li", ["Hello"])]),
+      h("ol", [h("li", ["Hello 2"])]),
+      h("ol", [h("li", ["Hello 3"])])
+    ]).innerHTML,
+    extensions: {
+      orderedList: OrderedList,
+      listItem: ListItem
+    }
+  });
+
+  t.expect(
+    transformCopied(
+      editor.state.doc.slice(0, editor.state.doc.nodeSize - 2),
+      editor.view
     ).toJSON()
   ).toMatchSnapshot();
 });
@@ -100,7 +155,8 @@ test("copying a single nested list item shouldn't copy the list metadata", (t) =
 
   t.expect(
     transformCopied(
-      editor.state.doc.slice(12, editor.state.doc.nodeSize - 2)
+      editor.state.doc.slice(12, editor.state.doc.nodeSize - 2),
+      editor.view
     ).toJSON()
   ).toMatchSnapshot();
 });
@@ -131,7 +187,7 @@ const paragraphTestCases = [
   {
     spacing: "single",
     content: createParagraphs("single"),
-    expectedHtml: `<p data-spacing="single">I am paragraph 1.<br>I am paragraph 2.<br>I am paragraph 3.</p>`,
+    expectedHtml: `<p data-spacing="single">I am paragraph 1.<br />I am paragraph 2.<br />I am paragraph 3.</p>`,
     expectedText: `I am paragraph 1.\nI am paragraph 2.\nI am paragraph 3.`
   },
   {
@@ -143,7 +199,7 @@ const paragraphTestCases = [
   {
     spacing: "single",
     content: createParagraphsWithSpaces("single"),
-    expectedHtml: `<p data-spacing="single">I am paragraph 1.<br><br><br>I am paragraph 2.<br><br><br>I am paragraph 3.</p>`,
+    expectedHtml: `<p data-spacing="single">I am paragraph 1.<br /><br /><br />I am paragraph 2.<br /><br /><br />I am paragraph 3.</p>`,
     expectedText: `I am paragraph 1.\n\n\nI am paragraph 2.\n\n\nI am paragraph 3.`
   },
   {
@@ -153,7 +209,7 @@ const paragraphTestCases = [
       ...createParagraphs("single"),
       ...createParagraphs("double")
     ],
-    expectedHtml: `<p data-spacing="double">I am paragraph 1.</p><p data-spacing="double">I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.<br>I am paragraph 1.<br>I am paragraph 2.<br>I am paragraph 3.</p><p data-spacing="double">I am paragraph 1.</p><p data-spacing="double">I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.</p>`,
+    expectedHtml: `<p data-spacing="double">I am paragraph 1.</p><p data-spacing="double">I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.<br />I am paragraph 1.<br />I am paragraph 2.<br />I am paragraph 3.</p><p data-spacing="double">I am paragraph 1.</p><p data-spacing="double">I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.</p>`,
     expectedText: `I am paragraph 1.\n\nI am paragraph 2.\n\nI am paragraph 3.\nI am paragraph 1.\nI am paragraph 2.\nI am paragraph 3.\n\nI am paragraph 1.\n\nI am paragraph 2.\n\nI am paragraph 3.`
   },
   {
@@ -166,7 +222,7 @@ const paragraphTestCases = [
       h("p", ["I am paragraph 5."], { "data-spacing": "single" }),
       h("p", ["I am paragraph 6."], { "data-spacing": "double" })
     ],
-    expectedHtml: `<p data-spacing="double">I am paragraph 1.<br>I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.<br>I am paragraph 4.<br>I am paragraph 5.</p><p data-spacing="double">I am paragraph 6.</p>`,
+    expectedHtml: `<p data-spacing="double">I am paragraph 1.<br />I am paragraph 2.</p><p data-spacing="double">I am paragraph 3.<br />I am paragraph 4.<br />I am paragraph 5.</p><p data-spacing="double">I am paragraph 6.</p>`,
     expectedText: `I am paragraph 1.\nI am paragraph 2.\n\nI am paragraph 3.\nI am paragraph 4.\nI am paragraph 5.\n\nI am paragraph 6.`
   }
 ];
@@ -184,9 +240,11 @@ for (const testCase of paragraphTestCases) {
       editor.view.state.schema
     );
     t.expect(
-      new XMLSerializer().serializeToString(
-        serializer.serializeFragment(
-          editor.state.doc.slice(0, editor.state.doc.nodeSize - 2).content
+      cleanOutputHtml(
+        new XMLSerializer().serializeToString(
+          serializer.serializeFragment(
+            editor.state.doc.slice(0, editor.state.doc.nodeSize - 2).content
+          )
         )
       )
     ).toBe(testCase.expectedHtml);

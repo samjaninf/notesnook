@@ -17,15 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
-import { ToolButton } from "../components/tool-button";
+import { ToolProps } from "../types.js";
+import { ToolButton } from "../components/tool-button.js";
 import { useMemo, useRef, useState } from "react";
-import { ResponsivePresenter } from "../../components/responsive";
-import { MoreTools } from "../components/more-tools";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { findSelectedNode } from "../../utils/prosemirror";
-import { Embed } from "../../extensions/embed";
-import { EmbedPopup } from "../popups/embed-popup";
+import { ResponsivePresenter } from "../../components/responsive/index.js";
+import { MoreTools } from "../components/more-tools.js";
+import { useToolbarLocation } from "../stores/toolbar-store.js";
+import { findSelectedNode } from "../../utils/prosemirror.js";
+import { Embed } from "../../extensions/embed/index.js";
+import { EmbedPopup } from "../popups/embed-popup.js";
+import { strings } from "@notesnook/intl";
 
 export function EmbedSettings(props: ToolProps) {
   const { editor } = props;
@@ -54,11 +55,7 @@ export function EmbedAlignLeft(props: ToolProps) {
       {...props}
       toggled={false}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setEmbedAlignment({ align: "left" })
-          .run()
+        editor.chain().focus().setEmbedAlignment({ align: "left" }).run()
       }
     />
   );
@@ -71,11 +68,7 @@ export function EmbedAlignRight(props: ToolProps) {
       {...props}
       toggled={false}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setEmbedAlignment({ align: "right" })
-          .run()
+        editor.chain().focus().setEmbedAlignment({ align: "right" }).run()
       }
     />
   );
@@ -88,11 +81,7 @@ export function EmbedAlignCenter(props: ToolProps) {
       {...props}
       toggled={false}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setEmbedAlignment({ align: "center" })
-          .run()
+        editor.chain().focus().setEmbedAlignment({ align: "center" }).run()
       }
     />
   );
@@ -119,7 +108,7 @@ export function EmbedProperties(props: ToolProps) {
 
       <ResponsivePresenter
         isOpen={isOpen}
-        desktop="menu"
+        desktop="popup"
         mobile="sheet"
         onClose={() => setIsOpen(false)}
         blocking
@@ -133,17 +122,17 @@ export function EmbedProperties(props: ToolProps) {
         }}
       >
         <EmbedPopup
-          title="Embed properties"
+          title={strings.embedProperties()}
           onClose={(newEmbed) => {
             if (!newEmbed) {
-              editor.current?.commands.setEmbedSize(embed);
+              editor.commands.setEmbedSize(embed);
             } else if (newEmbed.src !== embed.src)
-              editor.current?.commands.setEmbedSource(newEmbed.src);
+              editor.commands.setEmbedSource(newEmbed.src);
 
             setIsOpen(false);
           }}
           embed={embed}
-          onSizeChanged={(size) => editor.current?.commands.setEmbedSize(size)}
+          onSizeChanged={(size) => editor.commands.setEmbedSize(size)}
         />
       </ResponsivePresenter>
     </>

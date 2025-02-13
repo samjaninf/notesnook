@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import { enabled } from "react-native-privacy-snapshot";
 import { MMKV } from "../common/database/mmkv";
 import {
@@ -27,6 +27,10 @@ import {
 } from "../stores/use-setting-store";
 import { NotesnookModule } from "../utils/notesnook-module";
 import { scale, updateSize } from "../utils/size";
+import { DatabaseLogger } from "../common/database";
+import { useUserStore } from "../stores/use-user-store";
+import ScreenGuardModule from "react-native-screenguard";
+
 function reset() {
   const settings = get();
   if (settings.reminder !== "off" && settings.reminder !== "useroff") {
@@ -37,11 +41,67 @@ function reset() {
 }
 
 function resetSettings() {
-  MMKV.setString(
-    "appSettings",
-    JSON.stringify({ ...defaultSettings, introCompleted: true })
-  );
+  const settings: SettingStore["settings"] = {
+    ...defaultSettings,
+    introCompleted: true,
+    serverUrls: get().serverUrls,
+    backupDirectoryAndroid: get().backupDirectoryAndroid,
+    darkTheme: get().darkTheme,
+    lighTheme: get().lighTheme,
+    useSystemTheme: get().useSystemTheme,
+    colorScheme: get().colorScheme,
+    defaultSnoozeTime: get().defaultSnoozeTime,
+    defaultFontFamily: get().defaultFontFamily,
+    defaultFontSize: get().defaultFontSize,
+    privacyScreen: get().privacyScreen,
+    corsProxy: get().corsProxy,
+    showBackupCompleteSheet: get().showBackupCompleteSheet
+  };
+
+  MMKV.setString("appSettings", JSON.stringify(settings));
+  set(settings);
   init();
+}
+
+function migrateAppLock() {
+  const appLockMode = get().appLockMode;
+  if (appLockMode === "none") {
+    if (
+      get().appLockEnabled &&
+      !get().appLockHasPasswordSecurity &&
+      !get().biometricsAuthEnabled
+    ) {
+      setProperty("biometricsAuthEnabled", true);
+    }
+    return;
+  }
+  if (appLockMode === "background") {
+    set({
+      appLockEnabled: true,
+      appLockTimer: 0,
+      appLockMode: "none",
+      biometricsAuthEnabled: true
+    });
+  } else if (appLockMode === "launch") {
+    set({
+      appLockEnabled: true,
+      appLockTimer: -1,
+      appLockMode: "none",
+      biometricsAuthEnabled: true
+    });
+  }
+  DatabaseLogger.debug("App lock Migrated");
+}
+
+function migrateSettings(settings: SettingStore["settings"]) {
+  const version = settings.settingsVersion;
+  if (!version) {
+    settings.settingsVersion = 1;
+    settings.privacyScreen = settings.appLockEnabled
+      ? true
+      : settings.privacyScreen;
+    MMKV.setString("appSettings", JSON.stringify(settings));
+  }
 }
 
 function init() {
@@ -51,32 +111,41 @@ function init() {
   if (!settingsJson) {
     MMKV.setString("appSettings", JSON.stringify(settings));
   } else {
+    const settingsParsed = JSON.parse(settingsJson);
+    migrateSettings(settingsParsed);
     settings = {
       ...settings,
-      ...JSON.parse(settingsJson)
+      ...settingsParsed
     };
   }
-
   if (settings.fontScale) {
     scale.fontScale = settings.fontScale;
   }
+
   setTimeout(() => setPrivacyScreen(settings), 1);
   updateSize();
   useSettingStore.getState().setSettings({ ...settings });
+  migrateAppLock();
 }
 
 function setPrivacyScreen(settings: SettingStore["settings"]) {
-  if (settings.privacyScreen || settings.appLockMode === "background") {
+  if (settings.privacyScreen) {
     if (Platform.OS === "android") {
       NotesnookModule.setSecureMode(true);
     } else {
       enabled(true);
+      if (NativeModules.ScreenGuard) {
+        ScreenGuardModule.register({ backgroundColor: "#000000" });
+      }
     }
   } else {
     if (Platform.OS === "android") {
       NotesnookModule.setSecureMode(false);
     } else {
       enabled(false);
+      if (NativeModules.ScreenGuard) {
+        ScreenGuardModule.unregister();
+      }
     }
   }
 }
@@ -127,6 +196,7 @@ function setProperty<K extends keyof SettingStore["settings"]>(
 function onFirstLaunch() {
   const introCompleted = get().introCompleted;
   if (!introCompleted) {
+    MMKV.setInt("editor:tools_version", 1);
     set({
       rateApp: Date.now() + 86400000 * 2,
       nextBackupRequestTime: Date.now() + 86400000 * 3
@@ -153,6 +223,33 @@ function checkOrientation() {
   //});
 }
 
+function canLockAppInBackground() {
+  return get().appLockEnabled && get().appLockTimer !== -1;
+}
+let backgroundEnterTime = 0;
+function appEnteredBackground() {
+  backgroundEnterTime = Date.now();
+}
+
+const getBackgroundEnterTime = () => backgroundEnterTime;
+
+function shouldLockAppOnEnterForeground() {
+  if (
+    useUserStore.getState().disableAppLockRequests ||
+    useSettingStore.getState().requestBiometrics
+  )
+    return false;
+
+  const settings = get();
+  if (!settings.appLockEnabled) return false;
+  if (settings.appLockTimer === -1) return false;
+  if (settings.appLockTimer === 0) return true;
+  const time = Date.now();
+  const diff = time - backgroundEnterTime;
+
+  return diff > settings.appLockTimer * 60000;
+}
+
 export const SettingsService = {
   init,
   set,
@@ -163,7 +260,12 @@ export const SettingsService = {
   reset,
   getProperty,
   setProperty,
-  resetSettings
+  resetSettings,
+  shouldLockAppOnEnterForeground,
+  canLockAppInBackground,
+  appEnteredBackground,
+  setPrivacyScreen,
+  getBackgroundEnterTime
 };
 
 init();

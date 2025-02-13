@@ -20,39 +20,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { ButtonProps, Flex } from "@theme-ui/components";
 import { Input } from "@theme-ui/components";
 import { Icon } from "@notesnook/ui";
-import { Icons } from "../icons";
+import { Icons } from "../icons.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import tinycolor from "tinycolor2";
+import { colord } from "colord";
 import { HexColorPicker } from "react-colorful";
-import { Button } from "../../components/button";
-import { debounce } from "../../utils/debounce";
-import { Popup } from "../components/popup";
+import { Button } from "../../components/button.js";
+import { debounce } from "../../utils/debounce.js";
+import { Popup } from "../components/popup.js";
 import { SchemeColors } from "@notesnook/theme";
-
-export const DEFAULT_COLORS = [
-  "#e91e63",
-  "#9c27b0",
-  "#673ab7",
-  "#3f51b5",
-  "#2196f3",
-  "#03a9f4",
-  "#00bcd4",
-  "#009688",
-  "#4caf50",
-  "#8bc34a",
-  "#cddc39",
-  "#ffeb3b",
-  "#ffc107",
-  "#f44336"
-];
+import { Editor } from "../../types.js";
+import { strings } from "@notesnook/intl";
 
 type ColorPickerProps = {
+  editor: Editor;
   colors?: string[];
+  defaultColors?: string[];
   color?: string;
   onClear: () => void;
   expanded?: boolean;
   onChange: (color: string) => void;
   onClose?: () => void;
+  isPinned?: boolean;
+  onPin?: () => void;
   title?: string;
   onSave?: (color: string) => void;
   cacheKey?: string;
@@ -66,19 +55,24 @@ export function ColorPicker(props: ColorPickerProps) {
     onChange,
     title,
     onClose,
+    isPinned,
+    onPin,
     expanded,
     onSave,
     colors = [],
-    onDelete
+    defaultColors = [],
+    onDelete,
+    editor
   } = props;
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(expanded || false);
   const [currentColor, setCurrentColor] = useState<string>(
-    tinycolor(color || colors?.[0]).toHexString()
+    colord(color || colors?.[0]).toHex()
   );
   const [deleteMode, setDeleteMode] = useState(false);
-  const tColor = tinycolor(currentColor);
-  const allColors = deleteMode ? colors : [...DEFAULT_COLORS, ...colors];
+  const tColor = colord(currentColor);
+  const allColors = deleteMode ? colors : [...defaultColors, ...colors];
 
   useEffect(() => {
     if (!ref.current) return;
@@ -94,12 +88,14 @@ export function ColorPicker(props: ColorPickerProps) {
   );
 
   return (
-    <Popup title={title} onClose={onClose}>
+    <Popup title={title} onClose={onClose} isPinned={isPinned} onPin={onPin}>
       <Flex
         ref={ref}
         tabIndex={-1}
         sx={{
           bg: "background",
+          boxShadow: ["menu", "none"],
+          borderRadius: ["default", "none"],
           flexDirection: "column",
           ".react-colorful": {
             width: "auto",
@@ -119,6 +115,8 @@ export function ColorPicker(props: ColorPickerProps) {
               onChange={(color) => {
                 setCurrentColor(color);
                 onColorChange(color);
+                if (inputRef.current)
+                  inputRef.current.value = color.toUpperCase();
               }}
               onTouchEnd={() => onChange(currentColor)}
               onMouseUp={() => onChange(currentColor)}
@@ -131,6 +129,7 @@ export function ColorPicker(props: ColorPickerProps) {
               }}
             >
               <Input
+                ref={inputRef}
                 variant={"clean"}
                 placeholder="#000000"
                 spellCheck={false}
@@ -144,12 +143,12 @@ export function ColorPicker(props: ColorPickerProps) {
                   letterSpacing: 1.5,
                   textAlign: "center"
                 }}
-                value={currentColor.toUpperCase()}
+                defaultValue={currentColor.toUpperCase()}
                 maxLength={7}
                 onChange={(e) => {
                   const { value } = e.target;
                   if (!value) return;
-                  if (tinycolor(value, { format: "hex" }).isValid()) {
+                  if (colord(value).isValid()) {
                     setCurrentColor(value);
                     onChange(value);
                   }
@@ -164,7 +163,7 @@ export function ColorPicker(props: ColorPickerProps) {
                   icon={Icons.save}
                   iconSize={18}
                   onClick={() => onSave(currentColor)}
-                  title="Save color"
+                  title={strings.save()}
                 />
               )}
             </Flex>
@@ -185,7 +184,7 @@ export function ColorPicker(props: ColorPickerProps) {
               <PaletteButton
                 icon={Icons.colorClear}
                 onClick={onClear}
-                title="Clear color"
+                title={strings.clear()}
                 iconSize={15}
               />
             )}
@@ -194,19 +193,28 @@ export function ColorPicker(props: ColorPickerProps) {
               iconColor={deleteMode ? "var(--icon-error)" : "icon"}
               bg={deleteMode ? "var(--background-error)" : "transparent"}
               onClick={() => setDeleteMode((s) => !s)}
-              title={
-                deleteMode
-                  ? "Disable delete mode"
-                  : "Enable delete mode for deleting custom colors"
-              }
+              title={strings.deleteMode()}
               iconSize={18}
             />
             {!deleteMode && (
               <PaletteButton
                 icon={Icons.palette}
                 iconColor={tColor.isDark() ? "white" : "icon"}
-                onClick={() => setIsPickerOpen((s) => !s)}
-                title="Choose custom color"
+                onClick={() => {
+                  setIsPickerOpen((s) => {
+                    if (s) {
+                      editor.commands.focus();
+                    } else {
+                      const onSelectionChange = () => {
+                        setIsPickerOpen(false);
+                        editor.off("selectionUpdate", onSelectionChange);
+                      };
+                      editor.on("selectionUpdate", onSelectionChange);
+                    }
+                    return !s;
+                  });
+                }}
+                title={strings.chooseCustomColor()}
                 iconSize={18}
                 bg={currentColor}
               />
@@ -214,7 +222,7 @@ export function ColorPicker(props: ColorPickerProps) {
             {allColors.map((colorItem) => (
               <PaletteButton
                 key={colorItem}
-                title={deleteMode ? "Click to delete this color" : colorItem}
+                title={deleteMode ? strings.clickToRemove() : colorItem}
                 bg={colorItem}
                 iconSize={15}
                 iconColor={"white"}
@@ -276,9 +284,7 @@ function PaletteButton(props: PaletteButtonProps) {
         ml: [2, 2, 1],
         bg,
         ":hover:not(:disabled):not(:active)": {
-          bg: bg?.startsWith("#")
-            ? tinycolor(bg).darken(5).toRgbString()
-            : "hover"
+          bg: bg?.startsWith("#") ? colord(bg).darken().toRgbString() : "hover"
         },
         ...sx
       }}

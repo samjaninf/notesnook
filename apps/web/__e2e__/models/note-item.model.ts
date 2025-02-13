@@ -38,8 +38,8 @@ export class NoteItemModel extends BaseItemModel {
     this.editor = new EditorModel(this.page);
   }
 
-  async openNote() {
-    await this.click();
+  async openNote(openInNewTab?: boolean) {
+    await this.click({ middleClick: openInNewTab });
     const title = await this.getTitle();
     await this.editor.waitForLoading(title);
   }
@@ -47,11 +47,24 @@ export class NoteItemModel extends BaseItemModel {
   async openLockedNote(password: string) {
     if (!(await this.contextMenu.isLocked())) return;
 
-    await this.page.locator(getTestId("unlock-note-password")).fill(password);
-    await this.page.locator(getTestId("unlock-note-submit")).click();
+    await this.page
+      .locator(".active")
+      .locator(getTestId("unlock-note-password"))
+      .fill(password);
+    await this.page
+      .locator(".active")
+      .locator(getTestId("unlock-note-submit"))
+      .click();
 
     const title = await this.getTitle();
     await this.editor.waitForLoading(title);
+  }
+
+  async isFavorite() {
+    await this.locator
+      .locator(getTestId("favorite"))
+      .waitFor({ state: "visible" });
+    return true;
   }
 
   async getTags() {

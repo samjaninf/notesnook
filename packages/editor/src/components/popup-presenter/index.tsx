@@ -18,25 +18,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useEffect, PropsWithChildren } from "react";
-import { Box } from "@theme-ui/components";
 import {
   PositionOptions,
   PopupPresenterProps,
   PopupPresenter
 } from "@notesnook/ui";
-import ReactDOM from "react-dom";
-import { getPopupContainer, getToolbarElement } from "../../toolbar/utils/dom";
+import {
+  getPopupContainer,
+  getPopupRoot,
+  getToolbarElement,
+  unmountPopupRoot
+} from "../../toolbar/utils/dom.js";
 import {
   useIsMobile,
   useToolbarStore
-} from "../../toolbar/stores/toolbar-store";
+} from "../../toolbar/stores/toolbar-store.js";
 import React from "react";
-import { ResponsivePresenter, ResponsivePresenterProps } from "../responsive";
+import { ResponsivePresenter, ResponsivePresenterProps } from "../responsive/index.js";
 
 export type PopupWrapperProps = UsePopupHandlerOptions & {
   autoCloseOnUnmount?: boolean;
   position: PositionOptions;
-} & Partial<Omit<PopupPresenterProps, "onClose">>;
+} & Partial<Omit<PopupPresenterProps, "onClose" | "isOpen">>;
 export function PopupWrapper(props: PropsWithChildren<PopupWrapperProps>) {
   const { id, position, children, autoCloseOnUnmount, ...presenterProps } =
     props;
@@ -57,19 +60,13 @@ export function PopupWrapper(props: PropsWithChildren<PopupWrapperProps>) {
       position={position}
       blocking
       focusOnRender
+      className={isMobile ? "editor-mobile-toolbar-popup" : undefined}
       isMobile={isMobile}
+      container={getPopupContainer()}
       {...presenterProps}
       isOpen={isPopupOpen}
     >
-      <Box
-        sx={{
-          boxShadow: "menu",
-          borderRadius: "default",
-          overflow: "hidden"
-        }}
-      >
-        {children}
-      </Box>
+      {children}
     </PopupPresenter>
   );
 }
@@ -77,13 +74,11 @@ export function PopupWrapper(props: PropsWithChildren<PopupWrapperProps>) {
 type UsePopupHandlerOptions = {
   id: string;
   group: string;
-  isOpen: boolean;
   onClosed?: () => void;
 };
 export function usePopupHandler(options: UsePopupHandlerOptions) {
-  const { isOpen, id, onClosed, group } = options;
+  const { id, onClosed, group } = options;
   const openedPopups = useToolbarStore((store) => store.openedPopups);
-  const openPopup = useToolbarStore((store) => store.openPopup);
   const closePopup = useToolbarStore((store) => store.closePopup);
   const closePopupGroup = useToolbarStore((store) => store.closePopupGroup);
 
@@ -91,14 +86,9 @@ export function usePopupHandler(options: UsePopupHandlerOptions) {
   const isPopupDefined = typeof openedPopups[id] !== "undefined";
 
   useEffect(() => {
-    if (isOpen) openPopup({ id, group });
-    else closePopup(id);
-  }, [isOpen, closePopup, openPopup, id, group]);
-
-  useEffect(() => {
     // we don't want to close the popup just when it is about to open.
     if (!isPopupOpen && isPopupDefined) onClosed?.();
-  }, [isPopupOpen, isPopupDefined]);
+  }, [isPopupOpen, isPopupDefined, onClosed]);
 
   useEffect(() => {
     // if another popup in the same group is open, close it.
@@ -117,10 +107,10 @@ export function showPopup(options: ShowPopupOptions) {
   const { popup, ...props } = options;
 
   function hide() {
-    ReactDOM.unmountComponentAtNode(getPopupContainer());
+    unmountPopupRoot();
   }
 
-  ReactDOM.render(
+  getPopupRoot().render(
     <ResponsivePresenter
       isOpen
       position={{
@@ -132,6 +122,7 @@ export function showPopup(options: ShowPopupOptions) {
       }}
       blocking
       focusOnRender
+      container={getPopupContainer()}
       {...props}
       onClose={() => {
         hide();
@@ -139,8 +130,7 @@ export function showPopup(options: ShowPopupOptions) {
       }}
     >
       {popup(hide)}
-    </ResponsivePresenter>,
-    getPopupContainer()
+    </ResponsivePresenter>
   );
 
   return hide;

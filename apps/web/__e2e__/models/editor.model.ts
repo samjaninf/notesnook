@@ -19,46 +19,56 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { Locator, Page } from "@playwright/test";
 import { getTestId } from "../utils";
+import { TabItemModel } from "./tab-item.model";
+import { iterateList } from "./utils";
 
 export class EditorModel {
   private readonly page: Page;
   private readonly title: Locator;
-  private readonly content: Locator;
+  readonly content: Locator;
   private readonly tags: Locator;
   private readonly tagInput: Locator;
   private readonly focusModeButton: Locator;
   private readonly normalModeButton: Locator;
-  private readonly darkModeButton: Locator;
-  private readonly lightModeButton: Locator;
   private readonly enterFullscreenButton: Locator;
   private readonly exitFullscreenButton: Locator;
   private readonly wordCountText: Locator;
   private readonly dateEditedText: Locator;
   private readonly searchButton: Locator;
-  private readonly previewCancelButton: Locator;
-  private readonly previewRestoreButton: Locator;
-  private readonly previewNotice: Locator;
+  private readonly tabsList: Locator;
+  private readonly goBackButton: Locator;
+  private readonly goForwardButton: Locator;
+  private readonly newTabButton: Locator;
+  readonly savedIcon: Locator;
+  readonly notSavedIcon: Locator;
+  readonly undoButton: Locator;
+  readonly redoButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
-    this.title = page.locator(getTestId("editor-title"));
-    this.content = page.locator(".ProseMirror");
-    this.tagInput = page.locator(getTestId("editor-tag-input"));
-    this.tags = page.locator(`${getTestId("tags")} > ${getTestId("tag")}`);
+    this.title = page.locator(".active").locator(getTestId("editor-title"));
+    this.content = page.locator(".active").locator(".ProseMirror");
+    this.tagInput = page
+      .locator(".active")
+      .locator(getTestId("editor-tag-input"));
+    this.tags = page
+      .locator(".active")
+      .locator(`${getTestId("tags")} >> ${getTestId("tag")}`);
     this.focusModeButton = page.locator(getTestId("Focus mode"));
     this.normalModeButton = page.locator(getTestId("Normal mode"));
-    this.darkModeButton = page.locator(getTestId("Dark mode"));
-    this.lightModeButton = page.locator(getTestId("Light mode"));
     this.enterFullscreenButton = page.locator(getTestId("Enter fullscreen"));
     this.exitFullscreenButton = page.locator(getTestId("Exit fullscreen"));
     this.wordCountText = page.locator(getTestId("editor-word-count"));
     this.dateEditedText = page.locator(getTestId("editor-date-edited"));
     this.searchButton = page.locator(getTestId("Search"));
-    this.previewNotice = page.locator(getTestId("preview-notice"));
-    this.previewCancelButton = page.locator(getTestId("preview-notice-cancel"));
-    this.previewRestoreButton = page.locator(
-      getTestId("preview-notice-restore")
-    );
+    this.savedIcon = page.locator(getTestId("editor-save-state-saved"));
+    this.notSavedIcon = page.locator(getTestId("editor-save-state-notsaved"));
+    this.tabsList = page.locator(getTestId("tabs"));
+    this.goBackButton = page.locator(getTestId("go-back"));
+    this.goForwardButton = page.locator(getTestId("go-forward"));
+    this.newTabButton = page.locator(getTestId("New tab"));
+    this.undoButton = page.locator(getTestId("Undo"));
+    this.redoButton = page.locator(getTestId("Redo"));
   }
 
   async waitForLoading(title?: string, content?: string) {
@@ -67,7 +77,7 @@ export class EditorModel {
     await this.page.waitForFunction(
       ({ expected }) => {
         const titleInput = document.querySelector(
-          `[data-test-id="editor-title"]`
+          `.active [data-test-id="editor-title"]`
         ) as HTMLInputElement | null;
         if (titleInput)
           return expected !== undefined
@@ -83,16 +93,20 @@ export class EditorModel {
   }
 
   async waitForUnloading() {
-    await this.page.waitForURL(/#\/notes\/create\/\d+/gm);
-    await this.searchButton.waitFor({ state: "hidden" });
-    await this.page.locator(getTestId("tags")).waitFor({ state: "hidden" });
-    await this.wordCountText.waitFor({ state: "hidden" });
+    await this.page.waitForURL(/#\/notes\/?.+\/create/gm);
+    await this.searchButton.isDisabled();
+    await this.page
+      .locator(".active")
+      .locator(getTestId("tags"))
+      .waitFor({ state: "hidden" });
+    await this.dateEditedText.waitFor({ state: "hidden" });
+    await this.wordCountText.waitFor();
     await this.waitForLoading("", "");
   }
 
   async waitForSaving() {
     await this.page.waitForURL(/#\/notes\/?.+\/edit/gm);
-    await this.page.locator(getTestId("tags")).waitFor();
+    await this.page.locator(".active").locator(getTestId("tags")).waitFor();
     await this.searchButton.waitFor();
     await this.wordCountText.waitFor();
   }
@@ -100,9 +114,8 @@ export class EditorModel {
   async isUnloaded() {
     return (
       (await this.tagInput.isHidden()) &&
-      (await this.darkModeButton.isHidden()) &&
       (await this.enterFullscreenButton.isHidden()) &&
-      (await this.wordCountText.isHidden())
+      (await this.dateEditedText.isHidden())
     );
   }
 
@@ -123,7 +136,7 @@ export class EditorModel {
   async setContent(text: string) {
     await this.editAndWait(async () => {
       await this.content.focus();
-      await this.content.type(text);
+      await this.content.pressSequentially(text);
     });
   }
 
@@ -161,7 +174,7 @@ export class EditorModel {
 
   async selectAll() {
     await this.content.focus();
-    await this.page.keyboard.press("Control+a");
+    await this.page.keyboard.press("ControlOrMeta+a");
     await this.page.waitForTimeout(500);
   }
 
@@ -211,20 +224,6 @@ export class EditorModel {
     return await this.normalModeButton.isVisible();
   }
 
-  async enterDarkMode() {
-    await this.darkModeButton.click();
-    await this.lightModeButton.waitFor();
-  }
-
-  async exitDarkMode() {
-    await this.lightModeButton.click();
-    await this.darkModeButton.waitFor();
-  }
-
-  async isDarkMode() {
-    return await this.lightModeButton.isVisible();
-  }
-
   async enterFullscreen() {
     await this.enterFullscreenButton.click();
     await this.exitFullscreenButton.waitFor();
@@ -239,21 +238,57 @@ export class EditorModel {
     return await this.exitFullscreenButton.isVisible();
   }
 
-  async cancelPreview() {
-    await this.previewCancelButton.click();
-    await this.previewNotice.waitFor({ state: "hidden" });
-  }
-
-  async restoreSession() {
-    await this.previewRestoreButton.click();
-    await this.previewNotice.waitFor({ state: "hidden" });
-  }
-
   async getWordCount() {
     return parseInt(
       (await this.wordCountText.allInnerTexts())
         .toString()
         .replace(" words", "")
     );
+  }
+
+  async findTab(id: string) {
+    for await (const item of iterateList(this.tabsList.locator(".tab"))) {
+      const tabModel = new TabItemModel(item, this.page);
+      if ((await tabModel.getId()) === id) return tabModel;
+    }
+  }
+
+  async getTabs() {
+    const tabs: TabItemModel[] = [];
+    for await (const item of iterateList(this.tabsList.locator(".tab"))) {
+      tabs.push(new TabItemModel(item, this.page));
+    }
+    return tabs;
+  }
+
+  async goBack() {
+    await this.goBackButton.click();
+  }
+
+  async goForward() {
+    await this.goForwardButton.click();
+  }
+
+  async newTab() {
+    await this.newTabButton.click();
+  }
+
+  async attachImage() {
+    await this.page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await this.page.evaluate(async () => {
+      const resp = await fetch("https://dummyjson.com/image/150");
+      const blob = await resp.blob();
+      window.navigator.clipboard.write([
+        new ClipboardItem({
+          "image/png": new Blob([blob], { type: "image/png" })
+        })
+      ]);
+    });
+
+    await this.page.keyboard.down("ControlOrMeta");
+    await this.page.keyboard.press("KeyV");
+    await this.page.keyboard.up("ControlOrMeta");
   }
 }

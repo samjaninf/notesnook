@@ -17,11 +17,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { createEditor, h } from "../../../../test-utils";
+import { createEditor, h } from "../../../../test-utils/index.js";
 import { expect, test, vi } from "vitest";
-import { CodeBlock, inferLanguage } from "../code-block";
-import { HighlighterPlugin } from "../highlighter";
-import { getChangedNodes } from "../../../utils/prosemirror";
+import { CodeBlock, inferLanguage } from "../code-block.js";
+import { HighlighterPlugin } from "../highlighter.js";
+import { getChangedNodes } from "../../../utils/prosemirror.js";
 import { refractor } from "refractor/lib/core";
 
 const CODEBLOCKS_HTML = h("div", [
@@ -32,6 +32,17 @@ const CODEBLOCKS_HTML = h("div", [
     class: "language-typescript"
   })
 ]).innerHTML;
+
+const CODE_PARAGRAPH = `function helloWorld() {
+  console.log('Hello, World!');
+}`;
+
+interface DocumentNode {
+  type: string;
+  attrs?: { [key: string]: any };
+  content?: DocumentNode[];
+  text?: string;
+}
 
 test("codeblocks should get highlighted on init", async () => {
   const editorElement = h("div");
@@ -242,4 +253,74 @@ test("Switching codeblock language should register the new language", async () =
   editor.commands.updateAttributes(CodeBlock.name, { language: "java" });
   await new Promise((resolve) => setTimeout(resolve, 100));
   expect(refractor.registered("java")).toBe(true);
+});
+
+test("Toggling multiple paragraphs into a codeblock should make one codeblock", async () => {
+  const editorElement = h("div");
+  const { editor } = createEditor({
+    element: editorElement,
+    initialContent: CODE_PARAGRAPH,
+    extensions: {
+      codeblock: CodeBlock,
+      codeBlock: false,
+      code: false
+    }
+  });
+
+  const docLength = editor.state.doc.nodeSize - 2;
+
+  editor.commands.setTextSelection({ from: 0, to: docLength });
+  editor.commands.toggleCodeBlock();
+  editor.commands.updateAttributes(CodeBlock.name, { language: "javascript" });
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  expect(editorElement.outerHTML).toMatchSnapshot();
+
+  const docJSON = editor.state.doc.toJSON();
+  const content = docJSON.content;
+  const codeBlockNodes = content.filter(
+    (node: DocumentNode) => node.type === "codeblock"
+  );
+  const otherNodes = content.filter(
+    (node: DocumentNode) => node.type !== "codeblock"
+  );
+
+  expect(codeBlockNodes).toHaveLength(1);
+  expect(otherNodes).toHaveLength(0);
+});
+
+test("Toggling from a codeblock should make codeblock disappear", async () => {
+  const editorElement = document.createElement("div");
+  const { editor } = createEditor({
+    element: editorElement,
+    initialContent: CODEBLOCKS_HTML,
+    extensions: {
+      codeblock: CodeBlock,
+      codeBlock: false,
+      code: false
+    }
+  });
+
+  const docLength = editor.state.doc.nodeSize - 2;
+
+  editor.commands.setTextSelection({ from: 0, to: docLength });
+
+  editor.commands.toggleCodeBlock();
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  expect(editorElement.outerHTML).toMatchSnapshot();
+
+  const docJSON = editor.state.doc.toJSON();
+  const content = docJSON.content;
+  const codeBlockNodes = content.filter(
+    (node: DocumentNode) => node.type === "codeblock"
+  );
+  const paragraphNodes = content.filter(
+    (node: DocumentNode) => node.type === "paragraph"
+  );
+
+  expect(codeBlockNodes).toHaveLength(0);
+  expect(paragraphNodes).toHaveLength(2);
 });

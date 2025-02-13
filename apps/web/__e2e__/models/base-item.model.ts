@@ -25,7 +25,7 @@ export class BaseItemModel {
   private readonly titleText: Locator;
   readonly descriptionText: Locator;
 
-  constructor(protected readonly locator: Locator) {
+  constructor(readonly locator: Locator) {
     this.page = locator.page();
     this.titleText = this.locator.locator(getTestId(`title`));
     this.descriptionText = this.locator.locator(getTestId(`description`));
@@ -39,14 +39,16 @@ export class BaseItemModel {
     return await this.locator.evaluate((el) => el === document.activeElement);
   }
 
-  async click() {
+  async click(options?: { middleClick?: boolean }) {
     if (!(await this.locator.isVisible()))
       await this.locator.scrollIntoViewIfNeeded();
-    await this.locator.click();
+    await this.locator.click({
+      button: options?.middleClick ? "middle" : "left"
+    });
   }
 
   async getId() {
-    return await this.locator.getAttribute("id");
+    return (await this.locator.getAttribute("id"))?.replace("id_", "");
   }
 
   async getTitle() {

@@ -110,7 +110,6 @@ export function Main() {
   const [isClipping, setIsClipping] = useState(false);
   const [note, setNote] = usePersistentState<ItemReference>("note");
   const [refs, setRefs] = usePersistentState<SelectedReference[]>("refs", []);
-  const [tags, setTags] = usePersistentState<string[]>("tags", []);
   const [clipData, setClipData] = useState<ClipData>();
   const pageTitle = useRef<string>();
 
@@ -141,7 +140,14 @@ export function Main() {
 
       try {
         setIsClipping(true);
-        setClipData(await clip(clipArea, clipMode));
+        setClipData(
+          await clip(clipArea, clipMode, {
+            ...DEFAULT_SETTINGS,
+            ...settings,
+            images: isPremium,
+            inlineImages: isPremium
+          })
+        );
       } catch (e) {
         console.error(e);
         if (e instanceof Error) setError(e.message);
@@ -186,6 +192,7 @@ export function Main() {
             Permission is required to use the CORS proxy: {settings.corsProxy}
           </Text>
           <Button
+            variant="accent"
             onClick={async () => {
               if (!settings.corsProxy) return;
               setHasPermission(
@@ -366,7 +373,7 @@ export function Main() {
           Organization
         </Text>
 
-        {refs?.length || tags?.length ? null : (
+        {refs?.length ? null : (
           <NotePicker
             selectedNote={note}
             onSelected={(note) => setNote(note)}
@@ -374,19 +381,19 @@ export function Main() {
         )}
         {note ? null : (
           <>
-            {refs?.length || tags?.length ? null : (
+            {refs?.length ? null : (
               <Text variant="subBody" sx={{ my: 1, textAlign: "center" }}>
                 — or —
               </Text>
             )}
             <NotebookPicker
-              selectedItems={refs || []}
+              selectedItems={refs?.filter((r) => r.type === "notebook") || []}
               onSelected={(items) => setRefs(items)}
             />
             <Box sx={{ mt: 1 }} />
             <TagPicker
-              selectedTags={tags || []}
-              onSelected={(tags) => setTags(tags)}
+              selectedTags={refs?.filter((r) => r.type === "tag") || []}
+              onSelected={(tags) => setRefs(tags)}
             />
           </>
         )}
@@ -407,7 +414,6 @@ export function Main() {
               title,
               area: clipArea,
               mode: clipMode,
-              tags,
               note,
               refs,
               pageTitle: pageTitle.current,

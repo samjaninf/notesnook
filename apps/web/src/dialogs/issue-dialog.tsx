@@ -17,51 +17,48 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { Flex, Text } from "@theme-ui/components";
-import { appVersion } from "../utils/version";
+import { Flex, Link, Text } from "@theme-ui/components";
 import Field from "../components/field";
 import Dialog from "../components/dialog";
-import platform from "platform";
 import { useState } from "react";
-import { confirm, Perform } from "../common/dialog-controller";
-import { isUserPremium } from "../hooks/use-is-user-premium";
 import { writeText } from "clipboard-polyfill";
 import { store as userstore } from "../stores/user-store";
-import { db } from "../common/db";
 
 import { ErrorText } from "../components/error-text";
+import { Debug } from "@notesnook/core";
+import { ConfirmDialog } from "./confirm";
+import { BaseDialogProps, DialogManager } from "../common/dialog-manager";
+import { strings } from "@notesnook/intl";
+import { getDeviceInfo } from "../utils/platform";
+import { isUserPremium } from "../hooks/use-is-user-premium";
 
 const PLACEHOLDERS = {
-  title: "Briefly describe what happened",
-  body: `Tell us more about the issue you are facing.
-
-For example things like:
-    1. Steps to reproduce the issue
-    2. Things you have tried so far
-    3. etc.
-    
-This is all optional, of course.`
+  title: strings.issueTitlePlaceholder(),
+  body: strings.issuePlaceholder()
 };
 
-type IssueDialogProps = {
-  onClose: Perform;
-};
-function IssueDialog(props: IssueDialogProps) {
+type IssueDialogProps = BaseDialogProps<boolean>;
+export const IssueDialog = DialogManager.register(function IssueDialog(
+  props: IssueDialogProps
+) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string>();
 
   return (
     <Dialog
       isOpen={true}
-      title={"Report an issue"}
+      title={strings.reportAnIssue()}
       onClose={() => props.onClose(false)}
       positiveButton={{
-        text: "Submit",
+        text: strings.submit(),
         form: "issueForm",
         loading: isSubmitting,
         disabled: isSubmitting
       }}
-      negativeButton={{ text: "Cancel", onClick: () => props.onClose(false) }}
+      negativeButton={{
+        text: strings.cancel(),
+        onClick: () => props.onClose(false)
+      }}
     >
       <Flex
         id="issueForm"
@@ -79,7 +76,7 @@ function IssueDialog(props: IssueDialogProps) {
 
             if (!requestData.title.trim() || !requestData.body.trim()) return;
             requestData.body = BODY_TEMPLATE(requestData.body);
-            const url = await db.debug?.report({
+            const url = await Debug.report({
               title: requestData.title,
               body: requestData.body,
               userId: userstore.get().user?.id
@@ -98,7 +95,7 @@ function IssueDialog(props: IssueDialogProps) {
       >
         <Field
           required
-          label="Title"
+          label={strings.title()}
           id="title"
           name="title"
           placeholder={PLACEHOLDERS.title}
@@ -108,7 +105,7 @@ function IssueDialog(props: IssueDialogProps) {
           as="textarea"
           required
           variant="forms.input"
-          label="Description"
+          label={strings.description()}
           id="body"
           name="body"
           placeholder={PLACEHOLDERS.body}
@@ -126,11 +123,26 @@ function IssueDialog(props: IssueDialogProps) {
           p={1}
           sx={{ borderRadius: "default" }}
         >
-          Your bug report is public. Do NOT include sensitive information
-          (email, passwords etc) in the issue title or description.
+          {strings.issueNotice[0]()}{" "}
+          <Link
+            href="https://github.com/streetwriters/notesnook/issues"
+            title="github.com/streetwriters/notesnook/issues"
+            target="_blank"
+          >
+            github.com/streetwriters/notesnook/issues
+          </Link>
+          {strings.issueNotice[1]()}{" "}
+          <Link
+            href="https://discord.gg/zQBK97EE22"
+            title={strings.issueNotice[2]()}
+            target="_blank"
+          >
+            {strings.issueNotice[2]()}
+          </Link>
+          /
         </Text>
         <Text variant="subBody" mt={1}>
-          {getDeviceInfo()
+          {getDeviceInfo([`Pro: ${isUserPremium()}`])
             .split("\n")
             .map((t) => (
               <>
@@ -143,37 +155,22 @@ function IssueDialog(props: IssueDialogProps) {
       </Flex>
     </Dialog>
   );
-}
-
-export default IssueDialog;
+});
 
 function showIssueReportedDialog({ url }: { url: string }) {
-  return confirm({
-    title: "Thank you for reporting!",
-    positiveButtonText: "Copy link",
-    message: `You can track your bug report at [${url}](${url}).
-    
-    Please note that we will respond to your bug report on the link above. **We recommended that you save the above link for later reference.**
-    
-    If your issue is critical (e.g. notes not syncing, crashes etc.), please [join our Discord community](https://discord.com/invite/zQBK97EE22) for one-to-one support.`
+  return ConfirmDialog.show({
+    title: strings.thankYouForReporting(),
+    positiveButtonText: strings.copyLink(),
+    message: strings.bugReportMessage(url)
   }).then((result) => {
     result && writeText(url);
   });
 }
 
-function getDeviceInfo() {
-  const version = appVersion.formatted;
-  const os = platform.os;
-  const browser = `${platform.name} ${platform.version}`;
-
-  return `App version: ${version}
-OS: ${os}
-Browser: ${browser}
-Pro: ${isUserPremium()}`;
-}
-
 const BODY_TEMPLATE = (body: string) => {
-  const info = `**Device information:**\n${getDeviceInfo()}`;
+  const info = `**Device information:**\n${getDeviceInfo([
+    `Pro: ${isUserPremium()}`
+  ])}`;
   if (!body) return info;
   return `${body}\n\n${info}`;
 };

@@ -20,29 +20,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import React, { useEffect } from "react";
 import { useStore } from "./stores/app-store";
 import { useStore as useUserStore } from "./stores/user-store";
-import { useStore as useThemeStore } from "./stores/theme-store";
-import { useStore as useAttachmentStore } from "./stores/attachment-store";
-import { useStore as useEditorStore } from "./stores/editor-store";
+import { useEditorStore } from "./stores/editor-store";
 import { useStore as useAnnouncementStore } from "./stores/announcement-store";
-import { resetNotices, scheduleBackups } from "./common/notices";
+import { useStore as useSettingStore } from "./stores/setting-store";
+import {
+  resetNotices,
+  scheduleBackups,
+  scheduleFullBackups
+} from "./common/notices";
 import { introduceFeatures, showUpgradeReminderDialogs } from "./common";
 import { AppEventManager, AppEvents } from "./common/app-events";
 import { db } from "./common/db";
-import { EV, EVENTS } from "@notesnook/core/dist/common";
+import { CHECK_IDS, EV, EVENTS } from "@notesnook/core";
 import { registerKeyMap } from "./common/key-map";
 import { isUserPremium } from "./hooks/use-is-user-premium";
-import {
-  showAnnouncementDialog,
-  showBuyDialog,
-  showFeatureDialog,
-  showOnboardingDialog
-} from "./common/dialog-controller";
-import useSystemTheme from "./hooks/use-system-theme";
 import { updateStatus, removeStatus, getStatus } from "./hooks/use-status";
 import { showToast } from "./utils/toast";
-import { interruptedOnboarding } from "./dialogs/onboarding-dialog";
+import {
+  interruptedOnboarding,
+  OnboardingDialog
+} from "./dialogs/onboarding-dialog";
 import { hashNavigate } from "./navigation";
 import { desktop } from "./common/desktop-bridge";
+import { BuyDialog } from "./dialogs/buy-dialog";
+import { FeatureDialog } from "./dialogs/feature-dialog";
+import { AnnouncementDialog } from "./dialogs/announcement-dialog";
+import { logger } from "./utils/logger";
+import { strings } from "@notesnook/intl";
 
 type AppEffectsProps = {
   setShow: (show: boolean) => void;
@@ -53,15 +57,11 @@ export default function AppEffects({ setShow }: AppEffectsProps) {
   const isFocusMode = useStore((store) => store.isFocusMode);
   const initUser = useUserStore((store) => store.init);
   const initStore = useStore((store) => store.init);
-  const initAttachments = useAttachmentStore((store) => store.init);
   const setIsVaultCreated = useStore((store) => store.setIsVaultCreated);
-  const setColorScheme = useThemeStore((store) => store.setColorScheme);
-  const followSystemTheme = useThemeStore((store) => store.followSystemTheme);
   const initEditorStore = useEditorStore((store) => store.init);
   const dialogAnnouncements = useAnnouncementStore(
     (store) => store.dialogAnnouncements
   );
-  const isSystemThemeDark = useSystemTheme();
 
   useEffect(
     function initializeApp() {
@@ -71,32 +71,52 @@ export default function AppEffects({ setShow }: AppEffectsProps) {
           if (isUserPremium()) {
             return { type, result: true };
           } else {
-            showToast(
-              "error",
-              "Please upgrade your account to Pro to use this feature.",
-              [{ text: "Upgrade now", onClick: () => showBuyDialog() }]
-            );
+            let sentence;
+            switch (type) {
+              case CHECK_IDS.noteColor:
+                sentence = strings.upgradeToProToUseFeature("color");
+                break;
+              case CHECK_IDS.noteTag:
+                sentence = strings.upgradeToProToUseFeature("tags");
+                break;
+              case CHECK_IDS.notebookAdd:
+                sentence = strings.upgradeToProToUseFeature("notebook");
+                break;
+              case CHECK_IDS.vaultAdd:
+                sentence = strings.upgradeToProToUseFeature("vault");
+                break;
+              default:
+                sentence = strings.upgradeToProToUseFeature();
+                break;
+            }
+            showToast("error", sentence, [
+              { text: strings.upgradeNow(), onClick: () => BuyDialog.show({}) }
+            ]);
             return { type, result: false };
           }
         }
       );
 
       initStore();
-      initAttachments();
-      refreshNavItems();
       initEditorStore();
 
       (async function () {
+        await refreshNavItems();
         await updateLastSynced();
         if (await initUser()) {
           showUpgradeReminderDialogs();
         }
         await resetNotices();
-        setIsVaultCreated(await db.vault?.exists());
+        setIsVaultCreated(await db.vault.exists());
 
-        await showOnboardingDialog(interruptedOnboarding());
-        await showFeatureDialog("highlights");
+        const onboardingKey = interruptedOnboarding();
+        if (onboardingKey) await OnboardingDialog.show({ type: onboardingKey });
+        await FeatureDialog.show({ featureName: "highlights" });
         await scheduleBackups();
+        await scheduleFullBackups();
+        if (useSettingStore.getState().isFullOfflineMode)
+          // NOTE: we deliberately don't await here because we don't want to pause execution.
+          db.attachments.cacheAttachments().catch(logger.error);
       })();
 
       return () => {
@@ -106,7 +126,6 @@ export default function AppEffects({ setShow }: AppEffectsProps) {
     [
       initEditorStore,
       initStore,
-      initAttachments,
       updateLastSynced,
       refreshNavItems,
       initUser,
@@ -221,22 +240,14 @@ export default function AppEffects({ setShow }: AppEffectsProps) {
 
   useEffect(() => {
     introduceFeatures();
-    return () => {
-      EV.unsubscribeAll();
-    };
   }, []);
 
   useEffect(() => {
     if (!dialogAnnouncements.length || IS_TESTING) return;
     (async () => {
-      await showAnnouncementDialog(dialogAnnouncements[0]);
+      await AnnouncementDialog.show({ announcement: dialogAnnouncements[0] });
     })();
   }, [dialogAnnouncements]);
-
-  useEffect(() => {
-    if (!followSystemTheme) return;
-    setColorScheme(isSystemThemeDark ? "dark" : "light");
-  }, [isSystemThemeDark, followSystemTheme, setColorScheme]);
 
   useEffect(() => {
     const { unsubscribe } =
@@ -244,7 +255,7 @@ export default function AppEffects({ setShow }: AppEffectsProps) {
         onData(itemType) {
           switch (itemType) {
             case "note":
-              hashNavigate("/notes/create", { addNonce: true, replace: true });
+              useEditorStore.getState().newSession();
               break;
             case "notebook":
               hashNavigate("/notebooks/create", { replace: true });

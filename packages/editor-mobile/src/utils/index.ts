@@ -17,18 +17,17 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolbarGroupDefinition } from "@notesnook/editor";
-import { Editor } from "@notesnook/editor";
-import { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
-import { useEditorController } from "../hooks/useEditorController";
+import { Editor, ToolbarGroupDefinition } from "@notesnook/editor";
 import { ThemeDefinition } from "@notesnook/theme";
+import { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
+import { EditorController } from "../hooks/useEditorController";
+
+import { EditorEvents } from "./editor-events";
+
+globalThis.sessionId = "notesnook-editor";
+globalThis.pendingResolvers = {};
 
 globalThis.pendingResolvers = {};
-export function randId(prefix: string) {
-  return Math.random()
-    .toString(36)
-    .replace("0.", prefix || "");
-}
 
 export type SafeAreaType = {
   top: number;
@@ -52,39 +51,54 @@ export type Settings = {
   timeFormat: string;
   dateFormat: string;
   fontScale: number;
+  markdownShortcuts: boolean;
 };
 
 /* eslint-disable no-var */
 declare global {
+  var LINGUI_LOCALE: string;
+  var LINGUI_LOCALE_DATA: { [name: string]: any };
   var pendingResolvers: {
     [key: string]: (value: any) => void;
   };
-  var statusBar: React.MutableRefObject<{
-    set: React.Dispatch<
-      React.SetStateAction<{
-        date: string;
-        saved: string;
+
+  var readonlyEditor: boolean;
+  var statusBars: Record<
+    string,
+    | React.MutableRefObject<{
+        set: React.Dispatch<
+          React.SetStateAction<{
+            date: string;
+            saved: string;
+          }>
+        >;
+        updateWords: () => void;
+        resetWords: () => void;
       }>
-    >;
-    updateWords: () => void;
-  }>;
+    | undefined
+  >;
   var __PLATFORM__: "ios" | "android";
   var readonly: boolean;
   var noToolbar: boolean;
   var noHeader: boolean;
   function toBlobURL(dataurl: string, id?: string): string | undefined;
+  var pendingResolvers: { [name: string]: (value: any) => void };
+
+  var commands: any;
   /**
    * Id of current session
    */
-  var sessionId: string;
+  var sessionId: string | undefined;
+
+  var tabStore: any;
   /**
-   * Current tiptap instance
+   * Current tiptap editors
    */
-  var editor: Editor | null;
+  var editors: Record<string, Editor | null>;
   /**
-   * Current editor controller
+   * Current editor controllers
    */
-  var editorController: ReturnType<typeof useEditorController>;
+  var editorControllers: Record<string, EditorController | undefined>;
 
   var settingsController: {
     update: (settings: Settings) => void;
@@ -112,26 +126,40 @@ declare global {
     >;
   };
 
-  var editorTitle: RefObject<HTMLTextAreaElement>;
+  var editorTitles: Record<string, RefObject<HTMLTextAreaElement> | undefined>;
   /**
    * Global ref to manage tags in editor.
    */
-  var editorTags: MutableRefObject<{
-    setTags: React.Dispatch<
-      React.SetStateAction<{ title: string; alias: string }[]>
-    >;
-  }>;
+  var editorTags: Record<
+    string,
+    | MutableRefObject<{
+        setTags: React.Dispatch<
+          React.SetStateAction<
+            { title: string; alias: string; id: string; type: "tag" }[]
+          >
+        >;
+      }>
+    | undefined
+  >;
+
+  var __DEV__: boolean;
 
   function logger(type: "info" | "warn" | "error", ...logs: unknown[]): void;
+  function dbLogger(type: "log" | "error", ...logs: unknown[]): void;
+
+  function loadApp(): void;
   /**
    * Function to post message to react native
    * @param type
    * @param value
    */
 
-  function post<T extends keyof typeof EventTypes>(
-    type: (typeof EventTypes)[T],
-    value?: unknown
+  function post<T extends keyof typeof EditorEvents>(
+    type: (typeof EditorEvents)[T],
+    value?: unknown,
+    tabId?: string,
+    noteId?: string,
+    sessionId?: string
   ): void;
   interface Window {
     /**
@@ -142,31 +170,29 @@ declare global {
     };
   }
 }
-/* eslint-enable no-var */
 
-export const EventTypes = {
-  selection: "editor-event:selection",
-  content: "editor-event:content",
-  title: "editor-event:title",
-  scroll: "editor-event:scroll",
-  history: "editor-event:history",
-  newtag: "editor-event:newtag",
-  tag: "editor-event:tag",
-  filepicker: "editor-event:picker",
-  download: "editor-event:download-attachment",
-  logger: "native:logger",
-  back: "editor-event:back",
-  pro: "editor-event:pro",
-  monograph: "editor-event:monograph",
-  properties: "editor-event:properties",
-  fullscreen: "editor-event:fullscreen",
-  link: "editor-event:link",
-  contentchange: "editor-event:content-change",
-  reminders: "editor-event:reminders",
-  previewAttachment: "editor-event:preview-attachment",
-  copyToClipboard: "editor-events:copy-to-clipboard",
-  getAttachmentData: "editor-events:get-attachment-data"
-} as const;
+export function getRoot() {
+  if (!isReactNative()) return; // Subscribe only in react native webview.
+  const isSafari = navigator.vendor.match(/apple/i);
+  let root: Document | Window = document;
+  if (isSafari) {
+    root = window;
+  }
+  return root;
+}
+
+export function getOnMessageListener(callback: () => void) {
+  getRoot()?.addEventListener("onMessage", callback);
+  return {
+    remove: getRoot()?.removeEventListener("onMessage", callback)
+  };
+}
+
+export function randId(prefix: string) {
+  return Math.random()
+    .toString(36)
+    .replace("0.", prefix || "");
+}
 
 export function isReactNative(): boolean {
   return !!window.ReactNativeWebView;
@@ -176,34 +202,92 @@ export function logger(
   type: "info" | "warn" | "error",
   ...logs: unknown[]
 ): void {
+  if (typeof globalThis.__DEV__ !== "undefined" && !globalThis.__DEV__) return;
+
   const logString = logs
     .map((log) => {
       return typeof log !== "string" ? JSON.stringify(log) : log;
     })
     .join(" ");
 
-  post(EventTypes.logger, `[${type}]: ` + logString);
+  post(EditorEvents.logger, `[${type}]: ` + logString);
 }
 
-export function post<T extends keyof typeof EventTypes>(
-  type: (typeof EventTypes)[T],
+export function dbLogger(type: "error" | "log", ...logs: unknown[]): void {
+  const logString = logs
+    .map((log) => {
+      return typeof log !== "string" ? JSON.stringify(log) : log;
+    })
+    .join(" ");
+
+  post(EditorEvents.dbLogger, {
+    message: `[${type}]: ` + logString,
+    error: logs[0] instanceof Error ? logs[0] : undefined
+  });
+}
+
+export function post(
+  type: string,
   value?: unknown,
-  sessionId?: string
-): void {
+  tabId?: string,
+  noteId?: string,
+  sessionId?: string,
+  hasTimeout?: boolean
+): string {
+  const id = randId(type);
   if (isReactNative()) {
-    window.ReactNativeWebView.postMessage(
-      JSON.stringify({
-        type,
-        value: value,
-        sessionId: sessionId || globalThis.sessionId
-      })
+    setTimeout(() =>
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          type,
+          value: value,
+          sessionId: sessionId || globalThis.sessionId,
+          tabId,
+          noteId,
+          resolverId: id,
+          hasTimeout: hasTimeout
+        })
+      )
     );
-  } else {
-    // console.log(type, value);
   }
+  return id;
+}
+
+export async function postAsyncWithTimeout<R = any>(
+  type: string,
+  value?: unknown,
+  tabId?: string,
+  noteId?: string,
+  sessionId?: string,
+  waitFor?: number
+): Promise<R> {
+  return new Promise((resolve, reject) => {
+    const id = post(
+      type,
+      value,
+      tabId,
+      noteId,
+      sessionId,
+      waitFor !== undefined ? true : false
+    );
+    globalThis.pendingResolvers[id] = (result) => {
+      delete globalThis.pendingResolvers[id];
+      logger("info", `Async post request resolved for ${id}`);
+      resolve(result);
+    };
+    if (waitFor !== undefined) {
+      setTimeout(() => {
+        if (globalThis.pendingResolvers[id]) {
+          delete globalThis.pendingResolvers[id];
+          reject(new Error(`Async post request timed out for ${id}`));
+        }
+      }, waitFor);
+    }
+  });
 }
 
 globalThis.logger = logger;
+globalThis.dbLogger = dbLogger;
 globalThis.post = post;
 
 export function saveTheme(theme: ThemeDefinition) {

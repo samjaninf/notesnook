@@ -29,6 +29,9 @@ import {
   ZoomIn,
   ZoomOut
 } from "../icons";
+import { getPlatform } from "../../utils/platform";
+import { TITLE_BAR_HEIGHT } from "../title-bar";
+import { strings } from "@notesnook/intl";
 
 const DEFAULT_ZOOM_STEP = 0.3;
 const DEFAULT_LARGE_ZOOM = 4;
@@ -271,42 +274,42 @@ export class Lightbox extends React.Component<LightboxProps> {
       hideOnMobile?: boolean;
     }[] = [
       {
-        title: "Reset",
+        title: strings.reset(),
         icon: Reset,
         enabled: true,
         hidden: !allowReset,
         onClick: (e) => this.reset(e)
       },
       {
-        title: "Rotate left",
+        title: strings.rotateLeft(),
         icon: RotateACW,
         enabled: true,
         hidden: !allowRotate,
         onClick: () => this.applyRotate("acw")
       },
       {
-        title: "Rotate rigth",
+        title: strings.rotateRight(),
         icon: RotateCW,
         enabled: true,
         hidden: !allowRotate,
         onClick: () => this.applyRotate("cw")
       },
       {
-        title: "Zoom out",
+        title: strings.zoomOut(),
         icon: ZoomOut,
         enabled: zoom > 1,
         hidden: !allowZoom,
         onClick: () => this.applyZoom("out")
       },
       {
-        title: "Zoom in",
+        title: strings.zoomIn(),
         icon: ZoomIn,
         enabled: true,
         hidden: !allowZoom,
         onClick: () => this.applyZoom("in")
       },
       {
-        title: "Close",
+        title: strings.close(),
         icon: Close,
         enabled: !!onClose,
         onClick: (e) => this.exit(e)
@@ -337,7 +340,12 @@ export class Lightbox extends React.Component<LightboxProps> {
               borderRadius: "0px 0px 0px 5px",
               overflow: "hidden",
               alignItems: "center",
-              justifyContent: "flex-end"
+              justifyContent: "flex-end",
+              height: !hasNativeTitlebar ? TITLE_BAR_HEIGHT : "auto",
+              pr:
+                !hasNativeTitlebar && getPlatform() !== "darwin"
+                  ? "calc(100vw - env(titlebar-area-width))"
+                  : 0
             }}
           >
             {tools.map((tool) => (
@@ -349,6 +357,7 @@ export class Lightbox extends React.Component<LightboxProps> {
                 bg="transparent"
                 title={tool.title}
                 sx={{
+                  height: "100%",
                   borderRadius: 0,
                   display: [
                     tool.hideOnMobile ? "none" : "flex",

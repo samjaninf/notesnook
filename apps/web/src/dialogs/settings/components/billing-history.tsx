@@ -17,40 +17,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { useEffect, useState } from "react";
-import { Loading } from "../../../components/icons";
-import { Box, Flex, Link, Text } from "@theme-ui/components";
 import { getFormattedDate } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
+import { Box, Flex, Link, Text } from "@theme-ui/components";
+import { useEffect, useState } from "react";
 import { db } from "../../../common/db";
+import { TransactionStatus, Transaction } from "@notesnook/core";
+import { Loading } from "../../../components/icons";
 
-type Transaction = {
-  order_id: string;
-  checkout_id: string;
-  amount: string;
-  currency: string;
-  status: keyof typeof TransactionStatusToText;
-  created_at: string;
-  passthrough: null;
-  product_id: number;
-  is_subscription: boolean;
-  is_one_off: boolean;
-  subscription: Subscription;
-  user: User;
-  receipt_url: string;
-};
-
-type Subscription = {
-  subscription_id: number;
-  status: string;
-};
-
-type User = {
-  user_id: number;
-  email: string;
-  marketing_consent: boolean;
-};
-
-const TransactionStatusToText = {
+const TransactionStatusToText: Record<TransactionStatus, string> = {
   completed: "Completed",
   refunded: "Refunded",
   partially_refunded: "Partially refunded",
@@ -68,7 +43,7 @@ export function BillingHistory() {
         setError(undefined);
         setIsLoading(true);
 
-        const transactions = await db.subscriptions?.transactions();
+        const transactions = await db.subscriptions.transactions();
         if (!transactions) return;
         setTransactions(transactions);
       } catch (e) {
@@ -112,11 +87,11 @@ export function BillingHistory() {
               }}
             >
               {[
-                { id: "date", title: "Date", width: "20%" },
-                { id: "orderId", title: "Order ID", width: "20%" },
-                { id: "amount", title: "Amount", width: "20%" },
-                { id: "status", title: "Status", width: "20%" },
-                { id: "receipt", title: "Receipt", width: "20%" }
+                { id: "date", title: strings.date(), width: "20%" },
+                { id: "orderId", title: strings.orderId(), width: "20%" },
+                { id: "amount", title: strings.amount(), width: "20%" },
+                { id: "status", title: strings.status(), width: "20%" },
+                { id: "receipt", title: strings.receipt(), width: "20%" }
               ].map((column) =>
                 !column.title ? (
                   <th key={column.id} />
@@ -155,7 +130,7 @@ export function BillingHistory() {
                   {transaction.amount} {transaction.currency}
                 </Text>
                 <Text as="td" variant="body">
-                  {TransactionStatusToText[transaction.status]}
+                  {strings.transactionStatusToText(transaction.status)}
                 </Text>
                 <Text as="td" variant="body">
                   <Link
@@ -165,7 +140,7 @@ export function BillingHistory() {
                     variant="text.subBody"
                     sx={{ color: "accent" }}
                   >
-                    View receipt
+                    {strings.viewReceipt()}
                   </Link>
                 </Text>
               </Box>

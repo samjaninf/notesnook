@@ -32,27 +32,24 @@ import {
   Trash
 } from "../icons";
 import IconTag from "../icon-tag";
-import {
-  Reminder as ReminderType,
-  isReminderToday
-} from "@notesnook/core/dist/collections/reminders";
+import { isReminderToday } from "@notesnook/core";
 import { hashNavigate } from "../../navigation";
 import { Multiselect } from "../../common/multi-select";
 import { store } from "../../stores/reminder-store";
 import { db } from "../../common/db";
-import {
-  confirm,
-  showEditReminderDialog
-} from "../../common/dialog-controller";
-import { pluralize } from "@notesnook/common";
 import { getFormattedReminderTime } from "@notesnook/common";
-import { Item } from "../list-container/types";
 import { MenuItem } from "@notesnook/ui";
+import { Reminder as ReminderType } from "@notesnook/core";
+import { ConfirmDialog } from "../../dialogs/confirm";
+import { EditReminderDialog } from "../../dialogs/add-reminder-dialog";
+import { useStore as useSelectionStore } from "../../stores/selection-store";
+import { strings } from "@notesnook/intl";
 
 const RECURRING_MODE_MAP = {
   week: "Weekly",
   day: "Daily",
-  month: "Monthly"
+  month: "Monthly",
+  year: "Yearly"
 } as const;
 
 const PRIORITY_ICON_MAP = {
@@ -62,12 +59,12 @@ const PRIORITY_ICON_MAP = {
 } as const;
 
 type ReminderProps = {
-  item: Item;
-  simplified?: boolean;
+  item: ReminderType;
+  compact?: boolean;
 };
 
 function Reminder(props: ReminderProps) {
-  const { item, simplified } = props;
+  const { item, compact } = props;
   const reminder = item as unknown as ReminderType;
   const PriorityIcon = PRIORITY_ICON_MAP[reminder.priority];
   return (
@@ -76,8 +73,15 @@ function Reminder(props: ReminderProps) {
       title={reminder.title}
       body={reminder.description}
       isDisabled={reminder.disabled}
-      isSimple={simplified}
-      onClick={() => showEditReminderDialog(reminder.id)}
+      isCompact={compact}
+      onClick={() => EditReminderDialog.show({ reminderId: reminder.id })}
+      onKeyPress={async (e) => {
+        if (e.key === "Delete") {
+          await Multiselect.moveRemindersToTrash(
+            useSelectionStore.getState().selectedItems
+          );
+        }
+      }}
       footer={
         <Flex
           sx={{
@@ -85,6 +89,7 @@ function Reminder(props: ReminderProps) {
             gap: 1
           }}
         >
+          {reminder.disabled ? null : <PriorityIcon size={14} />}
           {reminder.disabled ? (
             <IconTag icon={ReminderOff} text={"Disabled"} testId={"disabled"} />
           ) : (
@@ -95,7 +100,6 @@ function Reminder(props: ReminderProps) {
               testId={"reminder-time"}
             />
           )}
-          {reminder.disabled ? null : <PriorityIcon size={14} />}
           {reminder.mode === "repeat" && reminder.recurringMode && (
             <IconTag
               icon={Refresh}
@@ -111,47 +115,47 @@ function Reminder(props: ReminderProps) {
 }
 
 export default React.memo(Reminder, (prev, next) => {
-  return prev?.item?.title === next?.item?.title;
+  return prev.item.dateModified === next.item.dateModified;
 });
 
-const menuItems: (
-  reminder: ReminderType,
-  items?: ReminderType[]
-) => MenuItem[] = (reminder, items = []) => {
+const menuItems: (reminder: ReminderType, items?: string[]) => MenuItem[] = (
+  reminder,
+  items = []
+) => {
   return [
     {
       type: "button",
       key: "edit",
-      title: "Edit",
+      title: strings.edit(),
       icon: Edit.path,
       onClick: () => hashNavigate(`/reminders/${reminder.id}/edit`)
     },
     {
       type: "button",
       key: "toggle",
-      title: reminder.disabled ? "Activate" : "Deactivate",
+      title: reminder.disabled ? strings.activate() : strings.deactivate(),
       icon: reminder.disabled ? Reminders.path : ReminderOff.path,
       onClick: async () => {
-        await db.reminders?.add({
+        await db.reminders.add({
           id: reminder.id,
           disabled: !reminder.disabled
         });
-        store.refresh();
+        await store.refresh();
       }
     },
     { key: "sep", type: "separator" },
     {
       type: "button",
       key: "delete",
-      title: "Delete",
+      title: strings.delete(),
       variant: "dangerous",
       icon: Trash.path,
       onClick: async () => {
-        confirm({
-          title: `Delete ${pluralize(items.length, "reminder")}`,
-          message: `Are you sure you want to proceed? **This action is IRREVERSIBLE**.`,
-          positiveButtonText: "Yes",
-          negativeButtonText: "No"
+        ConfirmDialog.show({
+          title: strings.doActions.delete.reminder(items.length),
+          message: strings.irreverisibleAction(),
+          positiveButtonText: strings.yes(),
+          negativeButtonText: strings.no()
         }).then((result) => {
           result && Multiselect.moveRemindersToTrash(items);
         });

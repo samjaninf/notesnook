@@ -23,76 +23,94 @@ import {
   getHTMLFromFragment
 } from "@tiptap/core";
 import CharacterCount from "@tiptap/extension-character-count";
-import { Code } from "@tiptap/extension-code";
 import Color from "@tiptap/extension-color";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
-import { Link } from "./extensions/link";
+import { Link, LinkAttributes } from "./extensions/link/index.js";
 import Placeholder from "@tiptap/extension-placeholder";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
-import TableHeader from "./extensions/table-header";
+import TableHeader from "./extensions/table-header/index.js";
 import TableRow from "@tiptap/extension-table-row";
 import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import ListKeymap from "@tiptap/extension-list-keymap";
-import { useEffect, useMemo } from "react";
-import "./extensions";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import {
   Attachment,
   AttachmentNode,
-  AttachmentOptions
-} from "./extensions/attachment";
-import BulletList from "./extensions/bullet-list";
-import { CodeBlock } from "./extensions/code-block";
-import { Codemark } from "./extensions/code-mark";
-import { DateTime, DateTimeOptions } from "./extensions/date-time";
-import { EmbedNode } from "./extensions/embed";
-import FontFamily from "./extensions/font-family";
-import FontSize from "./extensions/font-size";
-import { Highlight } from "./extensions/highlight";
-import { ImageNode, ImageOptions } from "./extensions/image";
-import { KeepInView } from "./extensions/keep-in-view";
-import { KeyMap } from "./extensions/key-map";
-import { ListItem } from "./extensions/list-item";
-import { MathBlock, MathInline } from "./extensions/math";
-import { OpenLink, OpenLinkOptions } from "./extensions/open-link";
-import OrderedList from "./extensions/ordered-list";
-import { OutlineList } from "./extensions/outline-list";
-import { OutlineListItem } from "./extensions/outline-list-item";
-import { Paragraph } from "./extensions/paragraph";
-import {
-  NodeViewSelectionNotifier,
-  usePortalProvider
-} from "./extensions/react";
-import { SearchReplace } from "./extensions/search-replace";
-import { Table } from "./extensions/table";
-import TableCell from "./extensions/table-cell";
-import { TaskItemNode } from "./extensions/task-item";
-import { TaskListNode } from "./extensions/task-list";
-import TextDirection from "./extensions/text-direction";
-import { WebClipNode, WebClipOptions } from "./extensions/web-clip";
-import { useEditor } from "./hooks/use-editor";
-import { usePermissionHandler } from "./hooks/use-permission-handler";
-import Toolbar from "./toolbar";
-import { useToolbarStore } from "./toolbar/stores/toolbar-store";
-import { DownloadOptions } from "./utils/downloader";
-import { Heading } from "./extensions/heading";
-import Clipboard, { ClipboardOptions } from "./extensions/clipboard";
-import Blockquote from "./extensions/blockquote";
-import { Quirks } from "./extensions/quirks";
-import { LIST_NODE_TYPES } from "./utils/node-types";
+  AttachmentType
+} from "./extensions/attachment/index.js";
+import BulletList from "./extensions/bullet-list/index.js";
+import { CodeBlock } from "./extensions/code-block/index.js";
+import { Codemark } from "./extensions/code-mark/index.js";
+import { DateTime, DateTimeOptions } from "./extensions/date-time/index.js";
+import { EmbedNode } from "./extensions/embed/index.js";
+import FontFamily from "./extensions/font-family/index.js";
+import FontSize from "./extensions/font-size/index.js";
+import { Highlight } from "./extensions/highlight/index.js";
+import { ImageNode, ImageOptions } from "./extensions/image/index.js";
+import { KeepInView } from "./extensions/keep-in-view/index.js";
+import { KeyMap } from "./extensions/key-map/index.js";
+import { ListItem } from "./extensions/list-item/index.js";
+import { MathBlock, MathInline } from "./extensions/math/index.js";
+import OrderedList from "./extensions/ordered-list/index.js";
+import { OutlineList } from "./extensions/outline-list/index.js";
+import { OutlineListItem } from "./extensions/outline-list-item/index.js";
+import { Paragraph } from "./extensions/paragraph/index.js";
+import { SearchReplace } from "./extensions/search-replace/index.js";
+import { Table } from "./extensions/table/index.js";
+import TableCell from "./extensions/table-cell/index.js";
+import { TaskItemNode } from "./extensions/task-item/index.js";
+import { TaskListNode } from "./extensions/task-list/index.js";
+import TextDirection from "./extensions/text-direction/index.js";
+import { WebClipNode, WebClipOptions } from "./extensions/web-clip/index.js";
+import { useEditor } from "./hooks/use-editor.js";
+import { usePermissionHandler } from "./hooks/use-permission-handler.js";
+import Toolbar from "./toolbar/index.js";
+import { useToolbarStore } from "./toolbar/stores/toolbar-store.js";
+import { DownloadOptions } from "./utils/downloader.js";
+import { Heading } from "./extensions/heading/index.js";
+import Clipboard from "./extensions/clipboard/index.js";
+import Blockquote from "./extensions/blockquote/index.js";
+import { Quirks } from "./extensions/quirks/index.js";
+import { LIST_NODE_TYPES } from "./utils/node-types.js";
+import CheckList from "./extensions/check-list/index.js";
+import CheckListItem from "./extensions/check-list-item/index.js";
+import { Callout } from "./extensions/callout/index.js";
+import BlockId from "./extensions/block-id/index.js";
+import { useEditorSearchStore } from "./toolbar/stores/search-store.js";
+import { DiffHighlighter } from "./extensions/diff-highlighter/index.js";
+import { getChangedNodes } from "./utils/prosemirror.js";
+import { strings } from "@notesnook/intl";
+import { InlineCode } from "./extensions/inline-code/inline-code.js";
+
+interface TiptapStorage {
+  dateFormat?: DateTimeOptions["dateFormat"];
+  timeFormat?: DateTimeOptions["timeFormat"];
+  openLink?: (url: string) => void;
+  downloadAttachment?: (attachment: Attachment) => void;
+  openAttachmentPicker?: (type: AttachmentType) => void;
+  previewAttachment?: (attachment: Attachment) => void;
+  copyToClipboard?: (text: string, html?: string) => void;
+  createInternalLink?: (
+    attributes?: LinkAttributes
+  ) => Promise<LinkAttributes | undefined>;
+  getAttachmentData:
+    | ((
+        attachment: Pick<Attachment, "hash" | "type">
+      ) => Promise<string | undefined>)
+    | undefined;
+}
+
+declare module "@tiptap/core" {
+  interface EditorStorage extends TiptapStorage {}
+}
 
 declare global {
   // eslint-disable-next-line no-var
   var keyboardShown: boolean;
-}
-
-function hasStyle(element: HTMLElement | string) {
-  const style = (element as HTMLElement).getAttribute("style");
-  if (!style || style === "font-family: inherit;") return false;
-  return true;
 }
 
 globalThis["keyboardShown"] = true;
@@ -102,16 +120,15 @@ const CoreExtensions = Object.entries(TiptapCoreExtensions)
   .map(([, extension]) => extension);
 
 export type TiptapOptions = EditorOptions &
-  Omit<AttachmentOptions, "HTMLAttributes"> &
   Omit<WebClipOptions, "HTMLAttributes"> &
   Omit<ImageOptions, "HTMLAttributes"> &
   DateTimeOptions &
-  ClipboardOptions &
-  OpenLinkOptions & {
+  TiptapStorage & {
     downloadOptions?: DownloadOptions;
     isMobile?: boolean;
     doubleSpacedLines?: boolean;
-    getAttachmentData: (attachment: Attachment) => Promise<string | undefined>;
+  } & {
+    placeholder: string;
   };
 
 const useTiptap = (
@@ -119,22 +136,24 @@ const useTiptap = (
   deps: React.DependencyList = []
 ) => {
   const {
-    doubleSpacedLines = true,
-    isMobile,
-    onDownloadAttachment,
-    onOpenAttachmentPicker,
-    onPreviewAttachment,
-    onOpenLink,
     getAttachmentData,
+    downloadAttachment,
+    openAttachmentPicker,
+    previewAttachment,
+    openLink,
     onBeforeCreate,
-    downloadOptions,
     dateFormat,
     timeFormat,
     copyToClipboard,
+    createInternalLink,
+
+    doubleSpacedLines = true,
+    isMobile,
+    downloadOptions,
     editorProps,
     ...restOptions
   } = options;
-  const PortalProviderAPI = usePortalProvider();
+
   const setIsMobile = useToolbarStore((store) => store.setIsMobile);
   const closeAllPopups = useToolbarStore((store) => store.closeAllPopups);
   const setDownloadOptions = useToolbarStore(
@@ -150,6 +169,12 @@ const useTiptap = (
     closeAllPopups();
   }, deps);
 
+  useLayoutEffect(() => {
+    return () => {
+      closeAllPopups();
+    };
+  }, [closeAllPopups]);
+
   const defaultOptions = useMemo<Partial<EditorOptions>>(
     () => ({
       enableCoreExtensions: false,
@@ -158,8 +183,20 @@ const useTiptap = (
       },
       extensions: [
         ...CoreExtensions,
-        NodeViewSelectionNotifier,
-        SearchReplace,
+        SearchReplace.configure({
+          onStartSearch: (term) => {
+            useEditorSearchStore.setState({
+              isSearching: true,
+              searchTerm: term,
+              focusNonce: Math.random()
+            });
+            return true;
+          },
+          onEndSearch: () => {
+            useEditorSearchStore.setState({ isSearching: false });
+            return true;
+          }
+        }),
         TextStyle.extend({
           parseHTML() {
             return [
@@ -175,6 +212,7 @@ const useTiptap = (
             ];
           }
         }),
+        DiffHighlighter,
         Paragraph.configure({
           doubleSpaced: doubleSpacedLines
         }),
@@ -216,6 +254,7 @@ const useTiptap = (
             ];
           }
         }),
+        BlockId,
         Blockquote,
         CharacterCount,
         Underline,
@@ -240,9 +279,7 @@ const useTiptap = (
           allowTableNodeSelection: true,
           cellMinWidth: 50
         }),
-        Clipboard.configure({
-          copyToClipboard
-        }),
+        Clipboard,
         TableRow,
         TableCell,
         TableHeader,
@@ -255,23 +292,17 @@ const useTiptap = (
           defaultAlignment: "left"
         }),
         Placeholder.configure({
-          placeholder: "Start writing your note..."
-        }),
-        OpenLink.configure({
-          onOpenLink
+          placeholder: options.placeholder || strings.startWritingNote()
         }),
         ImageNode.configure({ allowBase64: true }),
         EmbedNode,
         AttachmentNode.configure({
-          onDownloadAttachment,
-          onOpenAttachmentPicker,
-          onPreviewAttachment,
           types: [AttachmentNode.name, ImageNode.name, WebClipNode.name]
         }),
         OutlineListItem,
         OutlineList.configure({ keepAttributes: true, keepMarks: true }),
         ListItem,
-        Code.extend({ excludes: "link" }),
+        InlineCode,
         Codemark,
         MathInline,
         MathBlock,
@@ -281,6 +312,12 @@ const useTiptap = (
         DateTime.configure({ dateFormat, timeFormat }),
         KeyMap,
         WebClipNode,
+        CheckList,
+        CheckListItem.configure({
+          nested: true
+        }),
+
+        Callout,
 
         // Quirks handlers
         Quirks.configure({
@@ -296,6 +333,7 @@ const useTiptap = (
             ...LIST_NODE_TYPES
           ]
         }),
+
         ListKeymap.configure({
           listTypes: [
             {
@@ -309,32 +347,43 @@ const useTiptap = (
             {
               itemName: OutlineListItem.name,
               wrapperNames: [OutlineList.name]
+            },
+            {
+              itemName: CheckListItem.name,
+              wrapperNames: [CheckList.name]
             }
           ]
         })
       ],
       onBeforeCreate: ({ editor }) => {
-        editor.storage.portalProviderAPI = PortalProviderAPI;
         editor.storage.dateFormat = dateFormat;
         editor.storage.timeFormat = timeFormat;
+
+        editor.storage.openLink = openLink;
+        editor.storage.downloadAttachment = downloadAttachment;
+        editor.storage.openAttachmentPicker = openAttachmentPicker;
+        editor.storage.previewAttachment = previewAttachment;
+        editor.storage.copyToClipboard = copyToClipboard;
+        editor.storage.createInternalLink = createInternalLink;
         editor.storage.getAttachmentData = getAttachmentData;
+
         if (onBeforeCreate) onBeforeCreate({ editor });
       },
       injectCSS: false,
       parseOptions: { preserveWhitespace: true }
     }),
     [
-      onPreviewAttachment,
-      onDownloadAttachment,
-      onOpenAttachmentPicker,
+      previewAttachment,
+      downloadAttachment,
+      openAttachmentPicker,
       getAttachmentData,
-      PortalProviderAPI,
       onBeforeCreate,
-      onOpenLink,
+      openLink,
       dateFormat,
       timeFormat,
       editorProps,
-      copyToClipboard
+      copyToClipboard,
+      createInternalLink
     ]
   );
 
@@ -349,18 +398,32 @@ const useTiptap = (
   return editor;
 };
 
+function hasStyle(element: HTMLElement | string) {
+  const style = (element as HTMLElement).getAttribute("style");
+  if (!style || style === "font-family: inherit;") return false;
+  return true;
+}
+
 export { type Fragment } from "prosemirror-model";
-export { type Attachment, type AttachmentType } from "./extensions/attachment";
-export { type ImageAttributes } from "./extensions/image";
-export * from "./extensions/react";
-export * from "./toolbar";
-export * from "./types";
-export * from "./utils/word-counter";
-export * from "./utils/font";
+export {
+  type Attachment,
+  type AttachmentType
+} from "./extensions/attachment/index.js";
+export { type ImageAttributes } from "./extensions/image/index.js";
+export { type LinkAttributes } from "./extensions/link/index.js";
+export * from "./toolbar/index.js";
+export * from "./types.js";
+export * from "./utils/word-counter.js";
+export * from "./utils/font.js";
+export * from "./utils/toc.js";
+export * from "./utils/downloader.js";
 export {
   useTiptap,
   Toolbar,
   usePermissionHandler,
   getHTMLFromFragment,
+  getChangedNodes,
   type DownloadOptions
 };
+export { replaceDateTime } from "./extensions/date-time/index.js";
+export type * from "./extension-imports.js";

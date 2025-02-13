@@ -19,73 +19,122 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { SettingsGroup } from "./types";
 import { useStore as useAppStore } from "../../stores/app-store";
+import { useStore as useSettingStore } from "../../stores/setting-store";
+import { ConfirmDialog } from "../confirm";
+
+import { strings } from "@notesnook/intl";
 
 export const SyncSettings: SettingsGroup[] = [
   {
     key: "sync",
     section: "sync",
-    header: "Sync",
+    header: strings.sync(),
     settings: [
       {
         key: "toggle-sync",
-        title: "Enable sync",
-        description:
-          "Disable syncing to prevent all changes from syncing to & from other devices.",
+        title: strings.disableSync(),
+        description: strings.disableSyncDesc(),
         keywords: ["sync off", "toggle sync"],
         onStateChange: (listener) =>
           useAppStore.subscribe((s) => s.isSyncEnabled, listener),
         components: [
           {
             type: "toggle",
-            isToggled: () => useAppStore.getState().isSyncEnabled,
+            isToggled: () => !useAppStore.getState().isSyncEnabled,
             toggle: () => useAppStore.getState().toggleSync()
           }
         ]
       },
       {
         key: "toggle-auto-sync",
-        title: "Enable auto sync",
-        description:
-          "Disable auto sync to prevent changes from automatically syncing to other devices. This will require manually pressing the sync button in order to sync changes.",
+        title: strings.disableAutoSync(),
+        description: strings.disableAutoSyncDesc(),
         keywords: ["auto sync off", "automatic sync", "toggle auto sync"],
         onStateChange: (listener) =>
           useAppStore.subscribe((s) => s.isSyncEnabled, listener),
         components: [
           {
             type: "toggle",
-            isToggled: () => useAppStore.getState().isAutoSyncEnabled,
+            isToggled: () => !useAppStore.getState().isAutoSyncEnabled,
             toggle: () => useAppStore.getState().toggleAutoSync()
           }
         ]
       },
-
       {
         key: "toggle-realtime-sync",
-        title: "Enable realtime editor sync",
-        description:
-          "Disable realtime editor sync to prevent edits from updating in realtime on this device. This will require closing and opening the note to see new changes.",
+        title: strings.disableRealtimeSync(),
+        description: strings.disableRealtimeSyncDesc(),
         keywords: ["auto sync off", "automatic sync", "toggle auto sync"],
         onStateChange: (listener) =>
           useAppStore.subscribe((s) => s.isSyncEnabled, listener),
         components: [
           {
             type: "toggle",
-            isToggled: () => useAppStore.getState().isRealtimeSyncEnabled,
+            isToggled: () => !useAppStore.getState().isRealtimeSyncEnabled,
             toggle: () => useAppStore.getState().toggleRealtimeSync()
           }
         ]
       },
       {
+        key: "full-offline-mode",
+        title: strings.fullOfflineMode(),
+        description: strings.fullOfflineModeDesc(),
+        keywords: ["offline mode"],
+        onStateChange: (listener) =>
+          useSettingStore.subscribe((s) => s.isFullOfflineMode, listener),
+        components: [
+          {
+            type: "toggle",
+            isToggled: () => useSettingStore.getState().isFullOfflineMode,
+            toggle: () => useSettingStore.getState().toggleFullOfflineMode()
+          }
+        ]
+      },
+      {
         key: "force-sync",
-        title: "Having problems with sync?",
-        description: "Try force sync to resolve issues with syncing.",
-        keywords: ["force sync", "sync troubleshoot"],
+        title: strings.havingProblemsWithSync(),
+        description: strings.havingProblemsWithSyncDesc(),
+        keywords: ["force sync", "sync issues", "sync error", "sync problem"],
         components: [
           {
             type: "button",
-            title: "Force sync",
+            title: strings.forcePushChanges(),
             variant: "error",
-            action: () => useAppStore.getState().sync(true, true)
+            action: () =>
+              ConfirmDialog.show({
+                title: strings.areYouSure(),
+                message: strings.forceSyncNotice(),
+                checks: {
+                  accept: { text: strings.understand(), default: false }
+                },
+                positiveButtonText: strings.continue(),
+                negativeButtonText: strings.cancel()
+              }).then((result) => {
+                if (!result || !result.accept) return;
+                return useAppStore
+                  .getState()
+                  .sync({ force: true, type: "send" });
+              })
+          },
+          {
+            type: "button",
+            title: strings.forcePullChanges(),
+            variant: "error",
+            action: () =>
+              ConfirmDialog.show({
+                title: strings.areYouSure(),
+                message: strings.forcePullChangesDesc(),
+                checks: {
+                  accept: { text: strings.understand(), default: false }
+                },
+                positiveButtonText: strings.continue(),
+                negativeButtonText: strings.cancel()
+              }).then((result) => {
+                if (!result || !result.accept) return;
+                return useAppStore
+                  .getState()
+                  .sync({ force: true, type: "fetch" });
+              })
           }
         ]
       }

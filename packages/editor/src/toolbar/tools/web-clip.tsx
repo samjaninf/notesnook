@@ -17,11 +17,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
-import { ToolButton } from "../components/tool-button";
-import { MoreTools } from "../components/more-tools";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { findSelectedNode, selectionToOffset } from "../../utils/prosemirror";
+import { ToolProps } from "../types.js";
+import { ToolButton } from "../components/tool-button.js";
+import { MoreTools } from "../components/more-tools.js";
+import { useToolbarLocation } from "../stores/toolbar-store.js";
+import { findSelectedNode, selectionToOffset } from "../../utils/prosemirror.js";
 
 export function WebClipSettings(props: ToolProps) {
   const { editor } = props;
@@ -49,14 +49,14 @@ export function WebClipFullScreen(props: ToolProps) {
         const offset = selectionToOffset(editor.state);
         if (!offset) return;
 
-        const dom = editor.current?.view.nodeDOM(offset.from);
+        const dom = editor.view.nodeDOM(offset.from);
         if (!dom || !(dom instanceof HTMLElement)) return;
 
         const iframe = dom.querySelector("iframe");
         if (!iframe) return;
 
         iframe.requestFullscreen();
-        editor.current?.commands.updateAttributes("webclip", {
+        editor.commands.updateAttributes("webclip", {
           fullscreen: true
         });
       }}
@@ -74,7 +74,7 @@ export function WebClipOpenExternal(props: ToolProps) {
         const offset = selectionToOffset(editor.state);
         if (!offset) return;
 
-        const dom = editor.current?.view.nodeDOM(offset.from);
+        const dom = editor.view.nodeDOM(offset.from);
         if (!dom || !(dom instanceof HTMLElement)) return;
 
         const iframe = dom.querySelector("iframe");
@@ -86,7 +86,7 @@ export function WebClipOpenExternal(props: ToolProps) {
             { type: "text/html" }
           )
         );
-        editor.current?.commands.openLink(url);
+        editor.storage.openLink?.(url);
       }}
     />
   );
@@ -101,7 +101,7 @@ export function WebClipOpenSource(props: ToolProps) {
       onClick={async () => {
         const node = findSelectedNode(editor, "webclip");
         if (!node) return;
-        editor.current?.commands.openLink(node.attrs.src);
+        editor.storage.openLink?.(node.attrs.src);
       }}
     />
   );

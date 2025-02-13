@@ -17,27 +17,28 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
-import { Editor } from "../../types";
-import { ToolButton } from "../components/tool-button";
+import { ToolProps } from "../types.js";
+import { Editor } from "../../types.js";
+import { ToolButton } from "../components/tool-button.js";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ResponsivePresenter } from "../../components/responsive";
+import { ResponsivePresenter } from "../../components/responsive/index.js";
 import { MenuButtonItem, MenuItem } from "@notesnook/ui";
 import {
   moveColumnLeft as moveColumnLeftAction,
   moveColumnRight as moveColumnRightAction,
   moveRowDown as moveRowDownAction,
   moveRowUp as moveRowUpAction
-} from "../../extensions/table/actions";
-import { MoreTools } from "../components/more-tools";
-import { menuButtonToTool, toolToMenuButton } from "./utils";
-import { getToolDefinition } from "../tool-definitions";
-import { CellProperties as CellPropertiesPopup } from "../popups/cell-properties";
-import { ColorTool } from "./colors";
-import { Counter } from "../components/counter";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { showPopup } from "../../components/popup-presenter";
-import { useRefValue } from "../../hooks/use-ref-value";
+} from "../../extensions/table/actions.js";
+import { MoreTools } from "../components/more-tools.js";
+import { menuButtonToTool, toolToMenuButton } from "./utils.js";
+import { getToolDefinition } from "../tool-definitions.js";
+import { CellProperties as CellPropertiesPopup } from "../popups/cell-properties.js";
+import { ColorTool } from "./colors.js";
+import { Counter } from "../components/counter.js";
+import { useToolbarLocation } from "../stores/toolbar-store.js";
+import { showPopup } from "../../components/popup-presenter/index.js";
+import { useRefValue } from "../../hooks/use-ref-value.js";
+import { strings } from "@notesnook/intl";
 
 export function TableSettings(props: ToolProps) {
   const { editor } = props;
@@ -89,7 +90,7 @@ export function RowProperties(props: ToolProps) {
         onClick={() => setIsMenuOpen(true)}
       />
       <ResponsivePresenter
-        title="Row properties"
+        title={strings.rowProperties()}
         mobile="sheet"
         desktop="menu"
         isOpen={isMenuOpen}
@@ -132,7 +133,7 @@ export function ColumnProperties(props: ToolProps) {
         onClick={() => setIsMenuOpen(true)}
       />
       <ResponsivePresenter
-        title="Column properties"
+        title={strings.columnProperties()}
         mobile="sheet"
         desktop="menu"
         isOpen={isMenuOpen}
@@ -181,7 +182,7 @@ export function TableProperties(props: ToolProps) {
         onClick={() => setIsMenuOpen(true)}
       />
       <ResponsivePresenter
-        title="Table properties"
+        title={strings.tableSettings()}
         mobile="sheet"
         desktop="menu"
         isOpen={isMenuOpen}
@@ -228,10 +229,11 @@ export function CellBackgroundColor(props: ToolProps) {
     <ColorTool
       {...props}
       cacheKey="cellBackgroundColor"
-      activeColor={editor.current?.getAttributes("tableCell").backgroundColor}
-      title={"Cell background color"}
+      activeColor={editor.getAttributes("tableCell").backgroundColor}
+      title={strings.cellBackgroundColor()}
+      type="background"
       onColorChange={(color) =>
-        editor.current?.chain().setCellAttribute("backgroundColor", color).run()
+        editor.chain().setCellAttribute("backgroundColor", color).run()
       }
     />
   );
@@ -244,10 +246,11 @@ export function CellTextColor(props: ToolProps) {
     <ColorTool
       {...props}
       cacheKey="cellTextColor"
-      activeColor={editor.current?.getAttributes("tableCell").color}
-      title={"Cell text color"}
+      type="text"
+      activeColor={editor.getAttributes("tableCell").color}
+      title={strings.cellTextColor()}
       onColorChange={(color) =>
-        editor.current?.chain().focus().setCellAttribute("color", color).run()
+        editor.chain().focus().setCellAttribute("color", color).run()
       }
     />
   );
@@ -260,14 +263,11 @@ export function CellBorderColor(props: ToolProps) {
     <ColorTool
       {...props}
       cacheKey="cellBorderColor"
-      activeColor={editor.current?.getAttributes("tableCell").borderColor}
-      title={"Cell border color"}
+      activeColor={editor.getAttributes("tableCell").borderColor}
+      type="border"
+      title={strings.cellBorderColor()}
       onColorChange={(color) =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setCellAttribute("borderColor", color)
-          .run()
+        editor.chain().focus().setCellAttribute("borderColor", color).run()
       }
     />
   );
@@ -293,22 +293,14 @@ export function CellBorderWidth(props: ToolProps) {
 
   return (
     <Counter
-      title="cell border width"
+      title={strings.cellBorderWidth()}
       onDecrease={() =>
-        editor.current?.commands.setCellAttribute(
-          "borderWidth",
-          decreaseBorderWidth()
-        )
+        editor.commands.setCellAttribute("borderWidth", decreaseBorderWidth())
       }
       onIncrease={() =>
-        editor.current?.commands.setCellAttribute(
-          "borderWidth",
-          increaseBorderWidth()
-        )
+        editor.commands.setCellAttribute("borderWidth", increaseBorderWidth())
       }
-      onReset={() =>
-        editor.current?.commands.setCellAttribute("borderWidth", 1)
-      }
+      onReset={() => editor.commands.setCellAttribute("borderWidth", 1)}
       value={borderWidth + "px"}
     />
   );
@@ -316,12 +308,12 @@ export function CellBorderWidth(props: ToolProps) {
 
 const insertColumnLeft = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("insertColumnLeft")),
-  onClick: () => editor.current?.chain().focus().addColumnBefore().run()
+  onClick: () => editor.chain().focus().addColumnBefore().run()
 });
 
 const insertColumnRight = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("insertColumnRight")),
-  onClick: () => editor.current?.chain().focus().addColumnAfter().run()
+  onClick: () => editor.chain().focus().addColumnAfter().run()
 });
 
 const moveColumnLeft = (editor: Editor): MenuButtonItem => ({
@@ -336,27 +328,27 @@ const moveColumnRight = (editor: Editor): MenuButtonItem => ({
 
 const deleteColumn = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("deleteColumn")),
-  onClick: () => editor.current?.chain().focus().deleteColumn().run()
+  onClick: () => editor.chain().focus().deleteColumn().run()
 });
 
 const splitCells = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("splitCells")),
-  onClick: () => editor.current?.chain().focus().splitCell().run()
+  onClick: () => editor.chain().focus().splitCell().run()
 });
 
 const mergeCells = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("mergeCells")),
-  onClick: () => editor.current?.chain().focus().mergeCells().run()
+  onClick: () => editor.chain().focus().mergeCells().run()
 });
 
 const insertRowAbove = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("insertRowAbove")),
-  onClick: () => editor.current?.chain().focus().addRowBefore().run()
+  onClick: () => editor.chain().focus().addRowBefore().run()
 });
 
 const insertRowBelow = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("insertRowBelow")),
-  onClick: () => editor.current?.chain().focus().addRowAfter().run()
+  onClick: () => editor.chain().focus().addRowAfter().run()
 });
 
 const moveRowUp = (editor: Editor): MenuButtonItem => ({
@@ -370,12 +362,12 @@ const moveRowDown = (editor: Editor): MenuButtonItem => ({
 
 const deleteRow = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("deleteRow")),
-  onClick: () => editor.current?.chain().focus().deleteRow().run()
+  onClick: () => editor.chain().focus().deleteRow().run()
 });
 
 const deleteTable = (editor: Editor): MenuButtonItem => ({
   ...toolToMenuButton(getToolDefinition("deleteTable")),
-  onClick: () => editor.current?.chain().focus().deleteTable().run()
+  onClick: () => editor.chain().focus().deleteTable().run()
 });
 
 const cellProperties = (editor: Editor): MenuButtonItem => ({

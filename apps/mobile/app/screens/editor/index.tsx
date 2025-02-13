@@ -18,7 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { EV, EVENTS } from "@notesnook/core/dist/common";
+
+import { i18n } from "@lingui/core";
+import { strings } from "@notesnook/intl";
 import React, {
   forwardRef,
   useCallback,
@@ -32,20 +34,33 @@ import WebView from "react-native-webview";
 import { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTypes";
 import { notesnook } from "../../../e2e/test.ids";
 import { db } from "../../common/database";
-import { IconButton } from "../../components/ui/icon-button";
-import useKeyboard from "../../hooks/use-keyboard";
-import { eSubscribeEvent } from "../../services/event-manager";
-import { useEditorStore } from "../../stores/use-editor-store";
-import { getElevationStyle } from "../../utils/elevation";
+import BiometricService from "../../services/biometrics";
+import {
+  ToastManager,
+  eSendEvent,
+  eSubscribeEvent
+} from "../../services/event-manager";
+import {
+  eEditorReset,
+  eOnLoadNote,
+  eUnlockNote,
+  eUnlockWithBiometrics,
+  eUnlockWithPassword
+} from "../../utils/events";
 import { openLinkInBrowser } from "../../utils/functions";
-import { NoteType } from "../../utils/types";
+import { tabBarRef } from "../../utils/global-refs";
 import EditorOverlay from "./loading";
 import { EDITOR_URI } from "./source";
 import { EditorProps, useEditorType } from "./tiptap/types";
 import { useEditor } from "./tiptap/use-editor";
 import { useEditorEvents } from "./tiptap/use-editor-events";
-import { editorController } from "./tiptap/utils";
-import { useThemeColors } from "@notesnook/theme";
+import { syncTabs, useTabStore } from "./tiptap/use-tab-store";
+import {
+  editorController,
+  editorState,
+  openInternalLink,
+  randId
+} from "./tiptap/utils";
 
 const style: ViewStyle = {
   height: "100%",
@@ -55,7 +70,10 @@ const style: ViewStyle = {
   backgroundColor: "transparent"
 };
 const onShouldStartLoadWithRequest = (request: ShouldStartLoadRequest) => {
-  if (request.url.includes("https")) {
+  if (request.url.includes("nn://")) {
+    openInternalLink(request.url);
+    return false;
+  } else if (request.url.includes("https")) {
     if (Platform.OS === "ios" && !request.isTopFrame) return true;
     openLinkInBrowser(request.url);
     return false;
@@ -89,22 +107,22 @@ const Editor = React.memo(
         noToolbar,
         noHeader
       });
-      const renderKey = useRef(`editor-0`);
+      const renderKey = useRef(randId("editor-id") + editorId);
       useImperativeHandle(ref, () => ({
         get: () => editor
       }));
+      useLockedNoteHandler();
 
       const onError = useCallback(() => {
-        renderKey.current =
-          renderKey.current === `editor-0` ? `editor-1` : `editor-0`;
+        renderKey.current = randId("editor-id") + editorId;
         editor.state.current.ready = false;
         editor.setLoading(true);
-      }, [editor]);
+      }, [editor, editorId]);
 
       useEffect(() => {
-        const sub = [eSubscribeEvent("webview_reset", onError)];
+        const sub = [eSubscribeEvent(eEditorReset, onError)];
         return () => {
-          sub.forEach((s) => s.unsubscribe());
+          sub.forEach((s) => s?.unsubscribe());
         };
       }, [onError]);
 
@@ -124,15 +142,20 @@ const Editor = React.memo(
           <WebView
             testID={notesnook.editor.id}
             ref={editor.ref}
-            onLoad={editor.onLoad}
             key={renderKey.current}
             onRenderProcessGone={onError}
             nestedScrollEnabled
             onError={onError}
-            injectedJavaScriptBeforeContentLoaded={`
-          globalThis.readonly=${readonly};
-          globalThis.noToolbar=${noToolbar};
-          globalThis.noHeader=${noHeader};
+            injectedJavaScript={`
+              globalThis.__DEV__ = ${__DEV__}
+              globalThis.readonly=${readonly};
+              globalThis.noToolbar=${noToolbar};
+              globalThis.noHeader=${noHeader};
+              globalThis.LINGUI_LOCALE = "${i18n.locale}";
+              globalThis.LINGUI_LOCALE_DATA = ${JSON.stringify({
+                [i18n.locale]: i18n.messages
+              })};
+              globalThis.loadApp();
           `}
             useSharedProcessPool={false}
             javaScriptEnabled={true}
@@ -163,8 +186,7 @@ const Editor = React.memo(
             autoManageStatusBarEnabled={false}
             onMessage={onMessage || undefined}
           />
-          <EditorOverlay editorId={editorId || ""} editor={editor} />
-          <ReadonlyButton editor={editor} />
+          <EditorOverlay editor={editor} editorId={editorId} />
         </>
       );
     }
@@ -174,34 +196,165 @@ const Editor = React.memo(
 
 export default Editor;
 
-const ReadonlyButton = ({ editor }: { editor: useEditorType }) => {
-  const readonly = useEditorStore((state) => state.readonly);
-  const keyboard = useKeyboard();
-  const { colors } = useThemeColors();
+const useLockedNoteHandler = () => {
+  const tab = useTabStore((state) => state.getTab(state.currentTab));
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
-  const onPress = async () => {
-    if (editor.note.current) {
-      await db.notes?.note(editor.note.current.id).readonly();
-      editor.note.current = db.notes?.note(editor.note.current.id)
-        .data as NoteType;
-      useEditorStore.getState().setReadonly(false);
+  useEffect(() => {
+    for (const tab of useTabStore.getState().tabs) {
+      const noteId = useTabStore.getState().getTab(tab.id)?.session?.noteId;
+      if (!noteId) continue;
+      if (tabRef.current && tabRef.current.session?.noteLocked) {
+        useTabStore.getState().updateTab(tabRef.current.id, {
+          session: {
+            locked: true
+          }
+        });
+      }
     }
-  };
+  }, []);
 
-  return readonly && !keyboard.keyboardShown ? (
-    <IconButton
-      name="pencil-lock"
-      type="grayBg"
-      onPress={onPress}
-      color={colors.primary.accent}
-      customStyle={{
-        position: "absolute",
-        bottom: 60,
-        width: 60,
-        height: 60,
-        right: 12,
-        ...getElevationStyle(5)
-      }}
-    />
-  ) : null;
+  useEffect(() => {
+    (async () => {
+      const biometry = await BiometricService.isBiometryAvailable();
+      const fingerprint = await BiometricService.hasInternetCredentials();
+      useTabStore.setState({
+        biometryAvailable: !!biometry,
+        biometryEnrolled: !!fingerprint
+      });
+      syncTabs("biometry");
+    })();
+  }, [tab?.id]);
+
+  useEffect(() => {
+    const unlockWithBiometrics = async () => {
+      try {
+        if (!tabRef.current?.session?.noteLocked || !tabRef.current) return;
+        console.log("Trying to unlock with biometrics...");
+        const credentials = await BiometricService.getCredentials(
+          "Unlock note",
+          "Unlock note to open it in editor."
+        );
+
+        if (
+          credentials &&
+          credentials?.password &&
+          tabRef.current.session?.noteId
+        ) {
+          const note = await db.vault.open(
+            tabRef.current.session?.noteId,
+            credentials?.password
+          );
+
+          eSendEvent(eOnLoadNote, {
+            item: note,
+            refresh: true
+          });
+        } else {
+          if (tabRef.current && tabRef.current.session?.locked) {
+            editorController.current?.commands.focusPassInput();
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const onSubmit = async ({
+      password,
+      biometrics: enrollBiometrics
+    }: {
+      password: string;
+      biometrics?: boolean;
+    }) => {
+      if (!tabRef.current?.session?.noteId || !tabRef.current) return;
+      if (!password || password.trim().length === 0) {
+        ToastManager.show({
+          heading: strings.passwordNotEntered(),
+          type: "error"
+        });
+        return;
+      }
+
+      try {
+        const note = await db.vault.open(
+          tabRef.current?.session?.noteId,
+          password
+        );
+        if (enrollBiometrics && note) {
+          try {
+            const unlocked = await db.vault.unlock(password);
+            if (!unlocked) throw new Error(strings.passwordIncorrect());
+            await BiometricService.storeCredentials(password);
+            eSendEvent("vaultUpdated");
+            ToastManager.show({
+              heading: strings.biometricUnlockEnabled(),
+              type: "success",
+              context: "global"
+            });
+
+            const biometry = await BiometricService.isBiometryAvailable();
+            const fingerprint = await BiometricService.hasInternetCredentials();
+            useTabStore.setState({
+              biometryAvailable: !!biometry,
+              biometryEnrolled: !!fingerprint
+            });
+            syncTabs();
+          } catch (e) {
+            ToastManager.show({
+              heading: strings.passwordIncorrect(),
+              type: "error"
+            });
+          }
+        }
+        eSendEvent(eOnLoadNote, {
+          item: note,
+          refresh: true
+        });
+      } catch (e) {
+        ToastManager.show({
+          heading: strings.passwordIncorrect(),
+          type: "error"
+        });
+      }
+    };
+
+    const unlock = () => {
+      if (
+        (tabRef.current?.session?.locked,
+        useTabStore.getState().biometryAvailable &&
+          useTabStore.getState().biometryEnrolled &&
+          !editorState().movedAway)
+      ) {
+        setTimeout(() => {
+          unlockWithBiometrics();
+        }, 150);
+      } else {
+        if (!editorState().movedAway) {
+          setTimeout(() => {
+            if (tabRef.current && tabRef.current?.session?.locked) {
+              editorController.current?.commands.focus(tabRef.current?.id);
+            }
+          }, 100);
+        }
+      }
+    };
+
+    const subs = [
+      eSubscribeEvent(eUnlockNote, unlock),
+      eSubscribeEvent(eUnlockWithBiometrics, () => {
+        unlock();
+      }),
+      eSubscribeEvent(eUnlockWithPassword, onSubmit)
+    ];
+    if (tabRef.current?.session?.locked && tabBarRef.current?.page() === 2) {
+      unlock();
+    }
+    return () => {
+      subs.map((s) => s?.unsubscribe());
+    };
+  }, [tab?.id, tab?.session?.locked]);
+
+  return null;
 };

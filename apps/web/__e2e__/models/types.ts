@@ -19,12 +19,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 export type Notebook = {
   title: string;
-  topics: string[];
   description?: string;
+  subNotebooks?: Notebook[];
 };
 
 export type Item = {
   title: string;
+};
+
+export type Color = {
+  title: string;
+  color: string;
 };
 
 export type PriceItem = { label: string; value: string };

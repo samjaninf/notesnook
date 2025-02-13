@@ -17,15 +17,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
-import { ToolButton } from "../components/tool-button";
+import { ToolProps } from "../types.js";
+import { ToolButton } from "../components/tool-button.js";
 import { useRef, useState } from "react";
-import { ResponsivePresenter } from "../../components/responsive";
-import { MoreTools } from "../components/more-tools";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { ImageProperties as ImagePropertiesPopup } from "../popups/image-properties";
-import { findSelectedNode } from "../../utils/prosemirror";
-import { ImageAttributes } from "@/src/extensions/image";
+import { ResponsivePresenter } from "../../components/responsive/index.js";
+import { MoreTools } from "../components/more-tools.js";
+import { useToolbarLocation } from "../stores/toolbar-store.js";
+import { ImageProperties as ImagePropertiesPopup } from "../popups/image-properties.js";
+import { findSelectedNode } from "../../utils/prosemirror.js";
+import { ImageAttributes } from "../../extensions/image/index.js";
 
 export function ImageSettings(props: ToolProps) {
   const { editor } = props;
@@ -66,11 +66,7 @@ export function ImageAlignLeft(props: ToolProps) {
       {...props}
       toggled={!align || align === "left"}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setImageAlignment({ align: "left" })
-          .run()
+        editor.chain().focus().setImageAlignment({ align: "left" }).run()
       }
     />
   );
@@ -88,11 +84,7 @@ export function ImageAlignRight(props: ToolProps) {
       {...props}
       toggled={align === "right"}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setImageAlignment({ align: "right" })
-          .run()
+        editor.chain().focus().setImageAlignment({ align: "right" }).run()
       }
     />
   );
@@ -110,11 +102,7 @@ export function ImageAlignCenter(props: ToolProps) {
       {...props}
       toggled={align === "center"}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setImageAlignment({ align: "center" })
-          .run()
+        editor.chain().focus().setImageAlignment({ align: "center" }).run()
       }
     />
   );
@@ -132,11 +120,7 @@ export function ImageFloat(props: ToolProps) {
       {...props}
       toggled={!!float}
       onClick={() =>
-        editor.current
-          ?.chain()
-          .focus()
-          .setImageAlignment({ float: !float })
-          .run()
+        editor.chain().focus().setImageAlignment({ float: !float }).run()
       }
     />
   );
@@ -158,7 +142,7 @@ export function ImageProperties(props: ToolProps) {
 
       <ResponsivePresenter
         isOpen={isOpen}
-        desktop="menu"
+        desktop="popup"
         mobile="sheet"
         onClose={() => setIsOpen(false)}
         blocking

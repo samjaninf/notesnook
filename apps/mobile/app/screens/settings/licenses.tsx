@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import React from "react";
 import { LICENSES } from "./license-data";
 import { FlatList, Linking, Platform } from "react-native";
-import { PressableButton } from "../../components/ui/pressable";
+import { Pressable } from "../../components/ui/pressable";
 import Heading from "../../components/ui/typography/heading";
 import { SIZE } from "../../utils/size";
 import { useThemeColors } from "@notesnook/theme";
@@ -41,29 +41,31 @@ export const Licenses = () => {
 
   const renderItem = React.useCallback(
     ({ item }: { item: LicenseEntry }) => (
-      <PressableButton
+      <Pressable
         key={item.name}
-        customStyle={{
+        style={{
           alignItems: "flex-start",
           justifyContent: "flex-start",
           alignSelf: "flex-start",
           padding: 12,
           borderBottomWidth: 1,
-          borderBottomColor: colors.secondary.background,
+          borderBottomColor: colors.primary.border,
           borderRadius: 0
         }}
         onPress={() => {
           if (!item.link) return;
-          Linking.openURL(item.link).catch(console.log);
+          Linking.openURL(item.link).catch(() => {
+            /* empty */
+          });
         }}
       >
         <Heading size={SIZE.sm}>{item.name}</Heading>
         <Paragraph>
           {item.licenseType} | {item.author?.split("<")[0]}
         </Paragraph>
-      </PressableButton>
+      </Pressable>
     ),
-    [colors.secondary.background]
+    [colors.primary.border]
   );
   return (
     <FlatList

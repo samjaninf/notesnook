@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { useEffect, useState, memo, useMemo, useRef } from "react";
+import { useEffect, useState, memo, useRef, startTransition } from "react";
 import {
   Box,
   Button,
@@ -28,17 +28,17 @@ import {
   Label,
   Text
 } from "@theme-ui/components";
-import { getTotalSize } from "../common/attachments";
-import { useStore, store } from "../stores/attachment-store";
-import { formatBytes } from "@notesnook/common";
+import { store, useStore } from "../stores/attachment-store";
+import { formatBytes, usePromise, useResolvedItem } from "@notesnook/common";
 import Dialog from "../components/dialog";
-import { TableVirtuoso } from "react-virtuoso";
 import {
   ChevronDown,
   ChevronUp,
+  ClearCache,
   Close,
   DoubleCheckmark,
   Download,
+  FileAudio,
   FileDocument,
   FileGeneral,
   FileImage,
@@ -49,162 +49,171 @@ import {
   Uploading
 } from "../components/icons";
 import NavigationItem from "../components/navigation-menu/navigation-item";
-import { pluralize } from "@notesnook/common";
 import { db } from "../common/db";
-import { Perform } from "../common/dialog-controller";
-import { Multiselect } from "../common/multi-select";
-import { CustomScrollbarsVirtualList } from "../components/list-container";
 import { Attachment } from "../components/attachment";
-import {
-  isDocument,
-  isImage,
-  isVideo
-} from "@notesnook/core/dist/utils/filename";
-import { alpha } from "@theme-ui/color";
 import { ScopedThemeProvider } from "../components/theme-provider";
+import {
+  Attachment as AttachmentType,
+  VirtualizedGrouping
+} from "@notesnook/core";
+import { Multiselect } from "../common/multi-select";
+import {
+  VirtualizedTable,
+  VirtualizedTableRowProps
+} from "../components/virtualized-table";
+import { FlexScrollContainer } from "../components/scroll-container";
+import { BaseDialogProps, DialogManager } from "../common/dialog-manager";
+import { ConfirmDialog } from "./confirm";
+import { showToast } from "../utils/toast";
+import { Loader } from "../components/loader";
+import { strings } from "@notesnook/intl";
 
 type ToolbarAction = {
   title: string;
   icon: Icon;
-  onClick: ({ selected }: { selected: any[] }) => void;
+  onClick: ({ selected }: { selected: string[] }) => void;
 };
 
 const TOOLBAR_ACTIONS: ToolbarAction[] = [
   {
-    title: "Download",
+    title: strings.network.download(),
     icon: Download,
     onClick: async ({ selected }) => {
       await store.get().download(selected);
     }
   },
   {
-    title: "Recheck",
+    title: strings.fileCheck(),
     icon: DoubleCheckmark,
-    onClick: async ({ selected }) => {
-      await store.recheck(selected.map((a) => a.metadata.hash));
-    }
+    onClick: async ({ selected }) => await store.recheck(selected)
   },
   {
-    title: "Delete",
+    title: strings.delete(),
     icon: Trash,
     onClick: ({ selected }) => Multiselect.deleteAttachments(selected)
   }
 ];
 
-type AttachmentsDialogProps = { onClose: Perform };
-function AttachmentsDialog({ onClose }: AttachmentsDialogProps) {
-  const allAttachments = useStore((store) => store.attachments);
-  const [attachments, setAttachments] = useState<any[]>(allAttachments);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState({ id: "name", direction: "asc" });
-  const currentRoute = useRef<Route>("all");
-  const refresh = useStore((store) => store.refresh);
+const COLUMNS = [
+  { id: "filename" as const, title: strings.name(), width: "65%" },
+  { id: "status" as const, width: "24px" },
+  { id: "size" as const, title: strings.size(), width: "15%" },
+  { id: "dateUploaded" as const, title: strings.dateUploaded(), width: "20%" }
+];
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    setAttachments(filterAttachments(currentRoute.current, allAttachments));
-  }, [allAttachments]);
-
-  useEffect(() => {
-    setAttachments((a) => {
-      const attachments = a.slice();
-      if (sortBy.id === "name") {
-        attachments.sort(
-          sortBy.direction === "asc"
-            ? (a, b) => a.metadata.filename.localeCompare(b.metadata.filename)
-            : (a, b) => b.metadata.filename.localeCompare(a.metadata.filename)
-        );
-      } else if (sortBy.id === "size") {
-        attachments.sort(
-          sortBy.direction === "asc"
-            ? (a, b) => a.length - b.length
-            : (a, b) => b.length - a.length
-        );
-      } else if (sortBy.id === "dateUploaded") {
-        attachments.sort(
-          sortBy.direction === "asc"
-            ? (a, b) => a.dateUploaded - b.dateUploaded
-            : (a, b) => b.dateUploaded - a.dateUploaded
-        );
-      }
-      return attachments;
+type SortOptions = {
+  id: "filename" | "size" | "dateUploaded";
+  direction: "asc" | "desc";
+};
+type AttachmentsDialogProps = BaseDialogProps<false>;
+export const AttachmentsDialog = DialogManager.register(
+  function AttachmentsDialog({ onClose }: AttachmentsDialogProps) {
+    const nonce = useStore((store) => store.nonce);
+    const [attachments, setAttachments] =
+      useState<VirtualizedGrouping<AttachmentType>>();
+    const [counts, setCounts] = useState<Record<Route, number>>({
+      all: 0,
+      documents: 0,
+      images: 0,
+      orphaned: 0,
+      uploads: 0,
+      videos: 0,
+      audio: 0
     });
-  }, [sortBy]);
+    const [selected, setSelected] = useState<string[]>([]);
+    const [sortBy, setSortBy] = useState<SortOptions>({
+      id: "filename",
+      direction: "asc"
+    });
+    const currentRoute = useRef<Route>("all");
+    const download = useStore((store) => store.download);
 
-  const totalSize = useMemo(
-    () => getTotalSize(allAttachments),
-    [allAttachments]
-  );
+    useEffect(() => {
+      filterAttachments(currentRoute.current)
+        .sorted({
+          sortBy: sortBy.id,
+          sortDirection: sortBy.direction
+        })
+        .then((value) => startTransition(() => setAttachments(value)));
+    }, [sortBy, nonce]);
 
-  return (
-    <Dialog
-      isOpen={true}
-      width={"70%"}
-      onClose={() => onClose(false)}
-      noScroll
-      sx={{ bg: "transparent" }}
-    >
-      <Flex
-        sx={{
-          height: "80vw"
-        }}
+    useEffect(() => {
+      getCounts().then((counts) => startTransition(() => setCounts(counts)));
+    }, [nonce]);
+
+    return (
+      <Dialog
+        isOpen={true}
+        width={"70%"}
+        onClose={() => onClose(false)}
+        noScroll
+        sx={{ bg: "transparent" }}
       >
-        <Sidebar
-          totalSize={totalSize}
-          filter={(query) => {
-            setAttachments(
-              db.lookup?.attachments(db.attachments?.all || [], query) || []
-            );
-          }}
-          counts={getCounts(allAttachments)}
-          onRouteChange={(route) => {
-            currentRoute.current = route;
-            setSelected([]);
-            setAttachments(filterAttachments(route, allAttachments));
-          }}
-        />
         <Flex
-          variant="columnFill"
           sx={{
-            bg: "background",
-            flexDirection: "column",
-            px: 4,
-            pt: 2,
-            overflowY: "hidden",
-            overflow: "hidden",
-            table: { width: "100%", tableLayout: "fixed" },
-            "tbody::before": {
-              content: `''`,
-              display: "block",
-              height: 5
-            }
+            height: "80vw",
+            overflow: "hidden"
           }}
         >
-          <Flex sx={{ justifyContent: "space-between" }}>
-            <Flex sx={{ gap: 1 }}>
-              {TOOLBAR_ACTIONS.map((tool) => (
-                <Button
-                  variant="secondary"
-                  key={tool.title}
-                  title={tool.title}
-                  onClick={() =>
-                    tool.onClick({
-                      selected: attachments.filter(
-                        (a) => selected.indexOf(a.id) > -1
-                      )
-                    })
-                  }
-                  disabled={!selected.length}
-                  sx={{ bg: "transparent", p: 1 }}
-                >
-                  <tool.icon size={18} />
-                </Button>
-              ))}
-            </Flex>
-            {/* <Button
+          <Sidebar
+            onDownloadAll={async () =>
+              download(
+                await db.attachments.all.ids({
+                  sortBy: "dateCreated",
+                  sortDirection: "desc"
+                })
+              )
+            }
+            filter={async (query) => {
+              setAttachments(await db.lookup.attachments(query).sorted());
+            }}
+            counts={counts}
+            onRouteChange={async (route) => {
+              currentRoute.current = route;
+              setSelected([]);
+              setAttachments(
+                await filterAttachments(currentRoute.current).sorted({
+                  sortBy: sortBy.id,
+                  sortDirection: sortBy.direction
+                })
+              );
+            }}
+          />
+          <Flex
+            variant="columnFill"
+            sx={{
+              bg: "background",
+              flexDirection: "column",
+              pl: 4,
+              pt: 2,
+              overflow: "hidden"
+            }}
+          >
+            <FlexScrollContainer>
+              <Flex sx={{ justifyContent: "space-between" }}>
+                <Flex sx={{ gap: 1 }}>
+                  {TOOLBAR_ACTIONS.map((tool) => (
+                    <Button
+                      variant="secondary"
+                      key={tool.title}
+                      title={tool.title}
+                      onClick={() => {
+                        try {
+                          tool.onClick({
+                            selected
+                          });
+                        } catch (e) {
+                          showToast("error", (e as Error).message);
+                        }
+                      }}
+                      disabled={!selected.length}
+                      sx={{ bg: "transparent", p: 1 }}
+                    >
+                      <tool.icon size={18} />
+                    </Button>
+                  ))}
+                </Flex>
+                {/* <Button
               variant="tool"
               sx={{ p: 1, display: "flex" }}
               onClick={async () => {
@@ -217,186 +226,231 @@ function AttachmentsDialog({ onClose }: AttachmentsDialogProps) {
                 Upload
               </Text>
             </Button> */}
-          </Flex>
-          <TableVirtuoso
-            components={{
-              Scroller: CustomScrollbarsVirtualList,
-              TableRow: (props) => {
-                const attachment = attachments[props["data-item-index"]];
-                return (
-                  <Attachment
-                    {...props}
-                    key={attachment.id}
-                    attachment={attachment}
-                    isSelected={selected.indexOf(attachment.id) > -1}
-                    onSelected={() => {
-                      setSelected((s) => {
-                        const copy = s.slice();
-                        const index = copy.indexOf(attachment.id);
-                        if (index > -1) copy.splice(index, 1);
-                        else copy.push(attachment.id);
-                        return copy;
-                      });
-                    }}
-                  />
-                );
-              }
-            }}
-            style={{ height: "100%" }}
-            data={attachments}
-            fixedItemHeight={30}
-            defaultItemHeight={30}
-            fixedHeaderContent={() => (
-              <Box
-                as="tr"
-                sx={{
-                  height: 40,
-                  th: { borderBottom: "1px solid var(--separator)" },
-                  bg: "background"
-                }}
-              >
-                <Text
-                  as="th"
-                  variant="body"
-                  sx={{
-                    width: 24,
-                    textAlign: "left",
-                    fontWeight: "normal",
-                    mb: 2
+              </Flex>
+              {attachments ? (
+                <VirtualizedTable
+                  style={{
+                    tableLayout: "fixed",
+                    width: "100%",
+                    borderCollapse: "collapse"
                   }}
-                >
-                  <Label>
-                    <Checkbox
-                      sx={{ width: 18, height: 18 }}
-                      onChange={(e) => {
-                        setSelected(
-                          e.currentTarget.checked
-                            ? attachments.map((a) => a.id)
-                            : []
-                        );
-                      }}
-                    />
-                  </Label>
-                </Text>
-                {[
-                  { id: "name", title: "Name", width: "65%" },
-                  { id: "status", width: "24px" },
-                  { id: "size", title: "Size", width: "15%" },
-                  { id: "dateUploaded", title: "Date uploaded", width: "20%" }
-                ].map((column) =>
-                  !column.title ? (
-                    <th key={column.id} />
-                  ) : (
+                  header={
                     <Box
-                      as="th"
-                      key={column.id}
+                      as="tr"
                       sx={{
-                        width: column.width,
-                        cursor: "pointer",
-                        px: 1,
-                        mb: 2,
-                        ":hover": { bg: "hover" }
-                      }}
-                      onClick={() => {
-                        setSortBy((sortBy) => ({
-                          direction:
-                            sortBy.id === column.id &&
-                            sortBy.direction === "asc"
-                              ? "desc"
-                              : "asc",
-                          id: column.id
-                        }));
+                        height: 40,
+                        th: { borderBottom: "1px solid var(--separator)" },
+                        bg: "background"
                       }}
                     >
-                      <Flex
+                      <Text
+                        as="th"
+                        variant="body"
                         sx={{
-                          alignItems: "center",
-                          justifyContent: "space-between"
+                          width: 24,
+                          textAlign: "left",
+                          fontWeight: "normal",
+                          mb: 2
                         }}
                       >
-                        <Text
-                          variant="body"
-                          sx={{ textAlign: "left", fontWeight: "normal" }}
-                        >
-                          {column.title}
-                        </Text>
-                        {sortBy.id === column.id ? (
-                          sortBy.direction === "asc" ? (
-                            <ChevronUp size={16} />
-                          ) : (
-                            <ChevronDown size={16} />
-                          )
-                        ) : null}
-                      </Flex>
+                        <Label>
+                          <Checkbox
+                            sx={{
+                              width: 18,
+                              height: 18,
+                              color:
+                                selected.length === attachments.length
+                                  ? "accent"
+                                  : "icon"
+                            }}
+                            onChange={async (e) => {
+                              setSelected(
+                                e.currentTarget.checked
+                                  ? await filterAttachments(
+                                      currentRoute.current
+                                    ).ids()
+                                  : []
+                              );
+                            }}
+                            checked={selected.length === attachments.length}
+                          />
+                        </Label>
+                      </Text>
+                      {COLUMNS.map((column) =>
+                        !column.title ? (
+                          <th key={column.id} />
+                        ) : (
+                          <Box
+                            as="th"
+                            key={column.id}
+                            sx={{
+                              width: column.width,
+                              cursor: "pointer",
+                              px: 1,
+                              mb: 2,
+                              ":hover": { bg: "hover" }
+                            }}
+                            onClick={() => {
+                              setSortBy((sortBy) => ({
+                                direction:
+                                  sortBy.id === column.id &&
+                                  sortBy.direction === "asc"
+                                    ? "desc"
+                                    : "asc",
+                                id: column.id
+                              }));
+                            }}
+                          >
+                            <Flex
+                              sx={{
+                                alignItems: "center",
+                                justifyContent: "space-between"
+                              }}
+                            >
+                              <Text
+                                variant="body"
+                                sx={{ textAlign: "left", fontWeight: "normal" }}
+                              >
+                                {column.title}
+                              </Text>
+                              {sortBy.id === column.id ? (
+                                sortBy.direction === "asc" ? (
+                                  <ChevronUp size={16} />
+                                ) : (
+                                  <ChevronDown size={16} />
+                                )
+                              ) : null}
+                            </Flex>
+                          </Box>
+                        )
+                      )}
                     </Box>
-                  )
-                )}
-              </Box>
-            )}
-            itemContent={() => <></>}
-          />
+                  }
+                  mode="fixed"
+                  estimatedSize={30}
+                  getItemKey={(index) => attachments.key(index)}
+                  items={attachments.placeholders}
+                  context={{
+                    isSelected: (id: string) => selected.indexOf(id) > -1,
+                    select: (id: string) => {
+                      setSelected((s) => {
+                        const copy = s.slice();
+                        const index = copy.indexOf(id);
+                        if (index > -1) copy.splice(index, 1);
+                        else copy.push(id);
+                        return copy;
+                      });
+                    },
+                    attachments
+                  }}
+                  renderRow={AttachmentRow}
+                />
+              ) : (
+                <Loader title={strings.loading() + "..."} />
+              )}
+            </FlexScrollContainer>
+          </Flex>
         </Flex>
-      </Flex>
-    </Dialog>
+      </Dialog>
+    );
+  }
+);
+
+function AttachmentRow(
+  props: VirtualizedTableRowProps<
+    boolean,
+    {
+      isSelected: (id: string) => boolean;
+      select: (id: string) => void;
+      attachments: VirtualizedGrouping<AttachmentType>;
+    }
+  >
+) {
+  const item = useResolvedItem({
+    index: props.index,
+    items: props.context!.attachments,
+    type: "attachment"
+  });
+  if (!item) return null;
+  return (
+    <Attachment
+      key={item.item.id}
+      rowRef={props.rowRef}
+      style={props.style}
+      item={item?.item}
+      isSelected={props.context?.isSelected(item.item.id)}
+      onSelected={() => props.context?.select(item.item.id)}
+    />
   );
 }
 
-export default AttachmentsDialog;
-
-type Route = "all" | "images" | "documents" | "videos" | "uploads" | "orphaned";
+type Route =
+  | "all"
+  | "images"
+  | "documents"
+  | "videos"
+  | "audio"
+  | "uploads"
+  | "orphaned";
 
 const routes: { id: Route; icon: Icon; title: string }[] = [
   {
     id: "all",
     icon: FileGeneral,
-    title: "All files"
+    title: strings.mediaTypes.all()
   },
   {
     id: "images",
     icon: FileImage,
-    title: "Images"
+    title: strings.mediaTypes.image()
   },
   {
     id: "documents",
     icon: FileDocument,
-    title: "Documents"
+    title: strings.mediaTypes.document()
   },
   {
     id: "videos",
     icon: FileVideo,
-    title: "Videos"
+    title: strings.mediaTypes.video()
+  },
+  {
+    id: "audio",
+    icon: FileAudio,
+    title: strings.mediaTypes.audio()
   },
   {
     id: "uploads",
     icon: Uploading,
-    title: "Uploads"
+    title: strings.uploads()
   },
   {
     id: "orphaned",
     icon: Unlink,
-    title: "Orphaned"
+    title: strings.orphaned()
   }
 ];
 
 type SidebarProps = {
+  onDownloadAll: () => void;
   onRouteChange: (route: Route) => void;
   filter: (query: string) => void;
   counts: Record<Route, number>;
-  totalSize: number;
 };
 const Sidebar = memo(
   function Sidebar(props: SidebarProps) {
-    const { onRouteChange, filter, counts, totalSize } = props;
+    const { onRouteChange, filter, counts, onDownloadAll } = props;
     const [route, setRoute] = useState("all");
     const downloadStatus = useStore((store) => store.status);
     const cancelDownload = useStore((store) => store.cancel);
-    const download = useStore((store) => store.download);
+    const result = usePromise(() => db.attachments.totalSize());
 
     return (
       <ScopedThemeProvider scope="navigationMenu" injectCssVars={false}>
         <Flex
           className="theme-scope-navigationMenu"
           sx={{
+            flexShrink: 0,
             flexDirection: "column",
             justifyContent: "space-between",
             width: 240,
@@ -405,7 +459,9 @@ const Sidebar = memo(
         >
           <Flex sx={{ flexDirection: "column" }}>
             <Input
-              placeholder="Search"
+              id="search"
+              name="search"
+              placeholder={strings.search()}
               sx={{ m: 2, mb: 0, width: "auto", bg: "background", py: "7px" }}
               onChange={(e) => {
                 setRoute(e.target.value ? "none" : "all");
@@ -429,43 +485,80 @@ const Sidebar = memo(
           <Flex sx={{ flexDirection: "column" }}>
             <Flex sx={{ pl: 2, m: 2, mt: 1, justifyContent: "space-between" }}>
               <Flex sx={{ flexDirection: "column" }}>
-                <Text variant="body">{pluralize(counts.all, "file")}</Text>
-                <Text variant="subBody">{formatBytes(totalSize)}</Text>
+                <Text variant="body">{strings.files(counts.all)}</Text>
+                {result.status === "fulfilled" && (
+                  <Text variant="subBody">
+                    {formatBytes(result.value || 0)}
+                  </Text>
+                )}
               </Flex>
-              <Button
-                variant="secondary"
-                sx={{
-                  bg: "transparent",
-                  borderRadius: 100,
-                  position: "relative",
-                  width: 38,
-                  height: 38
-                }}
-                title="Download all attachments"
-                onClick={async () => {
-                  if (downloadStatus) {
-                    await cancelDownload();
-                  } else {
-                    await download(db.attachments?.all);
-                  }
-                }}
-              >
-                {downloadStatus ? <Close size={18} /> : <Download size={18} />}
-                {downloadStatus ? (
-                  <Donut
-                    value={
-                      (downloadStatus.current / downloadStatus.total) * 100
+              <Flex>
+                <Button
+                  variant="secondary"
+                  sx={{
+                    bg: "transparent",
+                    borderRadius: 100,
+                    position: "relative",
+                    width: 38,
+                    height: 38
+                  }}
+                  disabled={!!downloadStatus}
+                  title={strings.clearCache()}
+                  onClick={async () => {
+                    if (
+                      await ConfirmDialog.show({
+                        title: strings.clearCacheConfirm(),
+                        message: strings.clearCacheConfirmDesc(),
+                        negativeButtonText: strings.no(),
+                        positiveButtonText: strings.yes()
+                      })
+                    ) {
+                      await db.fs().clear();
+                      showToast("success", strings.cacheCleared());
                     }
-                    max={100}
-                    size={38}
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0
-                    }}
-                  />
-                ) : null}
-              </Button>
+                  }}
+                >
+                  <ClearCache />
+                </Button>
+                <Button
+                  variant="secondary"
+                  sx={{
+                    bg: "transparent",
+                    borderRadius: 100,
+                    position: "relative",
+                    width: 38,
+                    height: 38
+                  }}
+                  title={strings.downloadAllAttachments()}
+                  onClick={async () => {
+                    if (downloadStatus) {
+                      await cancelDownload();
+                    } else {
+                      onDownloadAll();
+                    }
+                  }}
+                >
+                  {downloadStatus ? (
+                    <Close size={18} />
+                  ) : (
+                    <Download size={18} />
+                  )}
+                  {downloadStatus ? (
+                    <Donut
+                      value={
+                        (downloadStatus.current / downloadStatus.total) * 100
+                      }
+                      max={100}
+                      size={38}
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0
+                      }}
+                    />
+                  ) : null}
+                </Button>
+              </Flex>
             </Flex>
           </Flex>
         </Flex>
@@ -473,7 +566,6 @@ const Sidebar = memo(
     );
   },
   (prev, next) =>
-    prev.totalSize === next.totalSize &&
     prev.counts.all === next.counts.all &&
     prev.counts.documents === next.counts.documents &&
     prev.counts.images === next.counts.images &&
@@ -482,38 +574,30 @@ const Sidebar = memo(
     prev.counts.orphaned === next.counts.orphaned
 );
 
-function getCounts(attachments: any[]): Record<Route, number> {
-  const counts: Record<Route, number> = {
-    all: 0,
-    documents: 0,
-    images: 0,
-    videos: 0,
-    uploads: 0,
-    orphaned: 0
+async function getCounts(): Promise<Record<Route, number>> {
+  return {
+    all: await db.attachments.all.count(),
+    documents: await db.attachments.documents.count(),
+    images: await db.attachments.images.count(),
+    videos: await db.attachments.videos.count(),
+    audio: await db.attachments.audios.count(),
+    uploads: await db.attachments.pending.count(),
+    orphaned: await db.attachments.orphaned.count()
   };
-  for (const attachment of attachments) {
-    counts.all++;
-
-    if (isDocument(attachment.metadata.type)) counts.documents++;
-    else if (isImage(attachment.metadata.type)) counts.images++;
-    else if (isVideo(attachment.metadata.type)) counts.videos++;
-
-    if (!attachment.dateUploaded) counts.uploads++;
-    if (!attachment.noteIds.length) counts.orphaned++;
-  }
-  return counts;
 }
 
-function filterAttachments(route: Route, attachments: any[]): any[] {
+function filterAttachments(route: Route) {
   return route === "all"
-    ? attachments
+    ? db.attachments.all
     : route === "images"
-    ? attachments.filter((a) => a.metadata.type.startsWith("image/"))
+    ? db.attachments.images
     : route === "videos"
-    ? attachments.filter((a) => a.metadata.type.startsWith("video/"))
+    ? db.attachments.videos
     : route === "documents"
-    ? attachments.filter((a) => isDocument(a.metadata.type))
+    ? db.attachments.documents
     : route === "orphaned"
-    ? attachments.filter((a) => !a.noteIds.length)
-    : attachments.filter((a) => !a.dateUploaded);
+    ? db.attachments.orphaned
+    : route === "audio"
+    ? db.attachments.audios
+    : db.attachments.pending;
 }
