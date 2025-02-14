@@ -18,7 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { Editor, AnyExtension, Extensions } from "@tiptap/core";
-import StarterKit, { StarterKitOptions } from "@tiptap/starter-kit";
+import StarterKit from "@tiptap/starter-kit";
 import { builders, NodeBuilder } from "prosemirror-test-builder";
 import { Schema } from "@tiptap/pm/model";
 
@@ -87,6 +87,7 @@ function elem<K extends keyof HTMLElementTagNameMap>(tag: K) {
 
 export const ul = elem("ul");
 export const li = elem("li");
+export const p = elem("p");
 
 export function text(text: string) {
   return document.createTextNode(text);

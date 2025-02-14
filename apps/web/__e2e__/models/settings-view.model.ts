@@ -21,6 +21,7 @@ import { Page } from "@playwright/test";
 import { downloadAndReadFile, getTestId, uploadFile } from "../utils";
 import {
   confirmDialog,
+  fillConfirmPasswordDialog,
   fillPasswordDialog,
   waitForDialog,
   waitToHaveText
@@ -52,7 +53,7 @@ export class SettingsViewModel {
       .locator("button");
 
     await logoutButton.click();
-    await confirmDialog(this.page);
+    await confirmDialog(this.page.locator(getTestId("confirm-dialog")));
 
     await this.page
       .locator(getTestId("not-logged-in"))
@@ -75,12 +76,14 @@ export class SettingsViewModel {
     const key = await this.page
       .locator(getTestId("recovery-key"))
       .textContent();
-    await confirmDialog(this.page);
+
+    const dialog = this.page.locator(getTestId("recovery-key-dialog"));
+    await confirmDialog(dialog);
     return key;
   }
 
   async isLoggedIn() {
-    const item = await this.navigation.findItem("Subscription");
+    const item = await this.navigation.findItem("Subscription details");
     return !!(await item?.getTitle());
   }
 
@@ -111,16 +114,17 @@ export class SettingsViewModel {
     const item = await this.navigation.findItem("Backup & export");
     await item?.click();
 
-    const backupData = this.page
-      .locator(getTestId("setting-create-backup"))
-      .locator("button");
-
-    if (password) {
-      await backupData.click();
-      await fillPasswordDialog(this.page, password);
-    }
-
-    return await downloadAndReadFile(this.page, backupData, "utf-8");
+    return await downloadAndReadFile(
+      this.page,
+      async () => {
+        const backupData = this.page
+          .locator(getTestId("setting-create-backup"))
+          .locator("select");
+        await backupData.selectOption({ value: "partial", label: "Backup" });
+        if (password) await fillPasswordDialog(this.page, password);
+      },
+      "utf-8"
+    );
   }
 
   async restoreData(filename: string, password?: string) {
@@ -135,5 +139,44 @@ export class SettingsViewModel {
     if (password) await fillPasswordDialog(this.page, password);
 
     await waitForDialog(this.page, "Restoring backup");
+  }
+
+  async selectImageCompression(option: { value: string; label: string }) {
+    const item = await this.navigation.findItem("Behaviour");
+    await item?.click();
+
+    const imageCompressionDropdown = this.page
+      .locator(getTestId("setting-image-compression"))
+      .locator("select");
+
+    await imageCompressionDropdown.selectOption(option);
+  }
+
+  async enableAppLock(userPassword: string, appLockPassword: string) {
+    const item = await this.navigation.findItem("App lock");
+    await item?.click();
+
+    const appLockSwitch = this.page
+      .locator(getTestId("setting-enable-app-lock"))
+      .locator("label");
+
+    await appLockSwitch.click();
+    await fillPasswordDialog(this.page, userPassword);
+    await this.page.waitForTimeout(100);
+    await fillConfirmPasswordDialog(this.page, appLockPassword);
+    await this.page.waitForTimeout(100);
+  }
+
+  async disableAppLock(appLockPassword: string) {
+    const item = await this.navigation.findItem("App lock");
+    await item?.click();
+
+    const appLockSwitch = this.page
+      .locator(getTestId("setting-enable-app-lock"))
+      .locator("label");
+
+    await appLockSwitch.click();
+    await fillPasswordDialog(this.page, appLockPassword);
+    await this.page.waitForTimeout(100);
   }
 }

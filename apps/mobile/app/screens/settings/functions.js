@@ -17,9 +17,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { presentDialog } from "../../components/dialog/functions";
-import { ToastEvent } from "../../services/event-manager";
+import { strings } from "@notesnook/intl";
 import { db } from "../../common/database";
+import { validateAppLockPassword } from "../../common/database/encryption";
+import { presentDialog } from "../../components/dialog/functions";
+import BiometricService from "../../services/biometrics";
+import { ToastManager } from "../../services/event-manager";
+import SettingsService from "../../services/settings";
+import { useUserStore } from "../../stores/use-user-store";
 import { sleep } from "../../utils/time";
 
 export async function verifyUser(
@@ -31,15 +36,15 @@ export async function verifyUser(
 ) {
   presentDialog({
     context: context,
-    title: "Verify it's you",
+    title: strings.verifyItsYou(),
     input: true,
-    inputPlaceholder: "Enter account password",
-    paragraph: "Please enter your account password",
-    positiveText: "Verify",
+    inputPlaceholder: strings.enterPassword(),
+    paragraph: strings.enterPasswordDesc(),
+    positiveText: strings.verify(),
     secureTextEntry: true,
     disableBackdropClosing: disableBackdropClosing,
     onClose: onclose,
-    negativeText: closeText || "Cancel",
+    negativeText: closeText || strings.cancel(),
     positivePress: async (value) => {
       try {
         const user = await db.user.getUser();
@@ -49,23 +54,90 @@ export async function verifyUser(
             await onsuccess();
           });
         } else {
-          ToastEvent.show({
-            heading: "Incorrect password",
-            message: "The account password you entered is incorrect",
+          ToastManager.show({
+            heading: strings.passwordIncorrect(),
             type: "error",
             context: "global"
           });
           return false;
         }
       } catch (e) {
-        ToastEvent.show({
-          heading: "Failed to verify",
+        ToastManager.show({
+          heading: strings.verifyFailed(),
           message: e.message,
           type: "error",
           context: "global"
         });
         return false;
       }
+    }
+  });
+}
+
+export async function verifyUserWithApplock() {
+  const keyboardType = SettingsService.getProperty("applockKeyboardType");
+  return new Promise((resolve) => {
+    if (SettingsService.getProperty("appLockHasPasswordSecurity")) {
+      presentDialog({
+        title: strings.verifyItsYou(),
+        input: true,
+        inputPlaceholder:
+          keyboardType == "numeric"
+            ? strings.enterApplockPin()
+            : strings.enterApplockPassword(),
+        paragraph:
+          keyboardType == "numeric"
+            ? strings.enterApplockPinDesc()
+            : strings.enterApplockPasswordDesc(),
+        positiveText: strings.verify(),
+        secureTextEntry: true,
+        negativeText: strings.cancel(),
+        keyboardType: keyboardType,
+        positivePress: async (value) => {
+          try {
+            const verified = await validateAppLockPassword(value);
+            if (!verified) {
+              ToastManager.show({
+                heading: strings.invalid(
+                  keyboardType === "numeric" ? "pin" : "password"
+                ),
+                type: "error",
+                context: "local"
+              });
+              return false;
+            }
+            resolve(verified);
+          } catch (e) {
+            resolve(false);
+            return false;
+          }
+          return true;
+        }
+      });
+    } else {
+      BiometricService.isBiometryAvailable().then((available) => {
+        if (available) {
+          BiometricService.validateUser(strings.verifyItsYou()).then(
+            (verified) => {
+              resolve(verified);
+            }
+          );
+        } else if (useUserStore.getState().user) {
+          let verified = false;
+          verifyUser(
+            null,
+            () => {
+              resolve(true);
+            },
+            false,
+            () => {
+              resolve(verified);
+            }
+          );
+        } else {
+          resolve(true);
+        }
+      });
     }
   });
 }

@@ -17,68 +17,118 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import React, { useState, Suspense, useRef } from "react";
+import { useState, Suspense, useEffect, useRef } from "react";
 import { Box, Flex } from "@theme-ui/components";
 import { ScopedThemeProvider } from "./components/theme-provider";
 import useMobile from "./hooks/use-mobile";
 import useTablet from "./hooks/use-tablet";
-import useDatabase from "./hooks/use-database";
-import { Allotment, AllotmentHandle, LayoutPriority } from "allotment";
 import { useStore } from "./stores/app-store";
+import { useStore as useSettingStore } from "./stores/setting-store";
 import { Toaster } from "react-hot-toast";
-import { ViewLoader } from "./components/loaders/view-loader";
 import NavigationMenu from "./components/navigation-menu";
 import StatusBar from "./components/status-bar";
-import { EditorLoader } from "./components/loaders/editor-loader";
 import { FlexScrollContainer } from "./components/scroll-container";
 import CachedRouter from "./components/cached-router";
 import { WebExtensionRelay } from "./utils/web-extension-relay";
-import { usePersistentState } from "./hooks/use-persistent-state";
+import {
+  Pane,
+  SplitPane,
+  SplitPaneImperativeHandle
+} from "./components/split-pane";
+import GlobalMenuWrapper from "./components/global-menu-wrapper";
+import AppEffects from "./app-effects";
+import HashRouter from "./components/hash-router";
+import { useWindowFocus } from "./hooks/use-window-focus";
+import { Global } from "@emotion/react";
+import { isMac } from "./utils/platform";
+import useSlider from "./hooks/use-slider";
+import { AppEventManager, AppEvents } from "./common/app-events";
+import { TITLE_BAR_HEIGHT } from "./components/title-bar";
+import { getFontSizes } from "@notesnook/theme/theme/font/fontsize.js";
+import { useWindowControls } from "./hooks/use-window-controls";
 
 new WebExtensionRelay();
-
-const GlobalMenuWrapper = React.lazy(
-  () => import("./components/global-menu-wrapper")
-);
-const AppEffects = React.lazy(() => import("./app-effects"));
-const MobileAppEffects = React.lazy(() => import("./app-effects.mobile"));
-const HashRouter = React.lazy(() => import("./components/hash-router"));
 
 function App() {
   const isMobile = useMobile();
   const [show, setShow] = useState(true);
-  const [isAppLoaded] = useDatabase();
+  const isFocusMode = useStore((store) => store.isFocusMode);
+  const { isFocused } = useWindowFocus();
+  const { isFullscreen } = useWindowControls();
+  const hasNativeTitlebar =
+    useSettingStore.getState().desktopIntegrationSettings?.nativeTitlebar;
+  console.timeEnd("loading app");
 
   return (
     <>
-      {isAppLoaded && (
-        <Suspense fallback={<div style={{ display: "none" }} />}>
-          <div id="menu-wrapper">
-            <GlobalMenuWrapper />
-          </div>
-          <AppEffects setShow={setShow} />
-          {isMobile && (
-            <MobileAppEffects
-              sliderId="slider"
-              overlayId="overlay"
-              setShow={setShow}
-            />
-          )}
-        </Suspense>
+      {isFocused ? null : (
+        <Global
+          styles={`
+          .nav-pane {
+            opacity: 0.7;
+          }
+          .titlebar {
+            background: var(--background-secondary) !important;
+          }
+        `}
+        />
       )}
+      {IS_DESKTOP_APP && isMac() && !isFullscreen && !hasNativeTitlebar ? (
+        <Global
+          // These styles to make sure the app content doesn't overlap with the traffic lights.
+          styles={`
+            .nav-pane,
+            .mobile-nav-pane {
+              margin-top: env(titlebar-area-height) !important;
+              height: calc(100% - env(titlebar-area-height)) !important;
+            }
+            .nav-pane.collapsed + .list-pane .route-container-header,
+            .nav-pane.collapsed + .list-pane.collapsed + .editor-pane .editor-action-bar,
+            .nav-pane.collapsed + .editor-pane .editor-action-bar {
+                padding-left: 25px;
+            }
+            .editor-pane:first-of-type .editor-action-bar,
+            .mobile-editor-pane.pane-active .editor-action-bar,
+            .mobile-list-pane.pane-active .route-container-header {
+                padding-left: 80px;
+            }
+            .route-container-header, .editor-action-bar {
+                transition: padding-left 0.4s ease-out;
+            }
+            .editor-action-bar {
+              border-bottom: none;
+            }
+            .route-container-header .routeHeader {
+              font-size: ${getFontSizes().title};
+            }
+            .global-split-pane .react-split__sash {
+              height: calc(100% - ${TITLE_BAR_HEIGHT}px);
+            }
+          `}
+        />
+      ) : null}
+
+      <Suspense fallback={<div style={{ display: "none" }} />}>
+        <div id="menu-wrapper">
+          <GlobalMenuWrapper />
+        </div>
+      </Suspense>
+      <AppEffects setShow={setShow} />
+
       <Flex
         id="app"
         bg="background"
-        sx={{ overflow: "hidden", flexDirection: "column", height: "100%" }}
+        className={isFocusMode ? "app-focus-mode" : ""}
+        sx={{
+          overflow: "hidden",
+          flexDirection: "column",
+          height: "100%"
+        }}
       >
         {isMobile ? (
-          <MobileAppContents isAppLoaded={isAppLoaded} />
+          <MobileAppContents />
         ) : (
-          <DesktopAppContents
-            isAppLoaded={isAppLoaded}
-            setShow={setShow}
-            show={show}
-          />
+          <DesktopAppContents setShow={setShow} show={show} />
         )}
         <Toaster containerClassName="toasts-container" />
       </Flex>
@@ -88,50 +138,20 @@ function App() {
 
 export default App;
 
-type SuspenseLoaderProps<TComponent extends React.JSXElementConstructor<any>> =
-  {
-    condition: boolean;
-    props?: React.ComponentProps<TComponent>;
-    component: TComponent;
-    fallback: JSX.Element;
-  };
-
-function SuspenseLoader<TComponent extends React.JSXElementConstructor<any>>({
-  condition,
-  props,
-  component,
-  fallback
-}: SuspenseLoaderProps<TComponent>) {
-  if (!condition) return fallback;
-
-  const Component = component as (
-    props: any
-  ) => React.ReactComponentElement<any, any>;
-  return (
-    <Suspense fallback={IS_DESKTOP_APP ? null : fallback}>
-      <Component {...props} />
-    </Suspense>
-  );
-}
-
 type DesktopAppContentsProps = {
-  isAppLoaded: boolean;
   show: boolean;
   setShow: (show: boolean) => void;
 };
-function DesktopAppContents({
-  isAppLoaded,
-  show,
-  setShow
-}: DesktopAppContentsProps) {
+function DesktopAppContents({ show, setShow }: DesktopAppContentsProps) {
   const isFocusMode = useStore((store) => store.isFocusMode);
   const isTablet = useTablet();
-  const [paneSizes, setPaneSizes] = usePersistentState("paneSizes", [
-    isTablet ? 60 : 180,
-    isTablet ? 240 : 380
-  ]);
-  const panesRef = useRef<AllotmentHandle>(null);
-  const [isNarrow, setIsNarrow] = useState(paneSizes[0] <= 55);
+  const [isNarrow, setIsNarrow] = useState(isTablet || false);
+  const navPane = useRef<SplitPaneImperativeHandle>(null);
+
+  useEffect(() => {
+    if (isTablet) navPane.current?.collapse(0);
+    else if (navPane.current?.isCollapsed(0)) navPane.current?.expand(0);
+  }, [isTablet]);
 
   return (
     <>
@@ -141,82 +161,118 @@ function DesktopAppContents({
           overflow: "hidden"
         }}
       >
-        <Allotment
-          ref={panesRef}
-          proportionalLayout={false}
-          onDragEnd={(sizes) => {
-            setPaneSizes(sizes);
-            setIsNarrow(sizes[0] <= 55);
+        <SplitPane
+          className="global-split-pane"
+          ref={navPane}
+          autoSaveId="global-panel-group"
+          direction="vertical"
+          onChange={(sizes) => {
+            setIsNarrow(sizes[0] <= 70);
           }}
         >
-          <Allotment.Pane
-            className="pane nav-pane"
-            minSize={50}
-            preferredSize={isTablet ? 50 : paneSizes[0]}
-            visible={!isFocusMode}
-            priority={LayoutPriority.Low}
-          >
-            <NavigationMenu
-              toggleNavigationContainer={(state) => {
-                setShow(state || !show);
-              }}
-              isTablet={isNarrow}
-            />
-          </Allotment.Pane>
-          <Allotment.Pane
-            className="pane middle-pane"
-            minSize={2}
-            preferredSize={paneSizes[1]}
-            visible={show}
-            priority={LayoutPriority.Normal}
-          >
-            <ScopedThemeProvider
-              className="listMenu"
-              scope="list"
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                flex: 1,
-                bg: "background",
-                borderRight: "1px solid var(--separator)"
-              }}
+          {isFocusMode ? null : (
+            <Pane
+              id="nav-pane"
+              initialSize={180}
+              className={`nav-pane`}
+              minSize={50}
+              snapSize={120}
+              maxSize={300}
             >
-              {isAppLoaded && <CachedRouter />}
-            </ScopedThemeProvider>
-          </Allotment.Pane>
-          <Allotment.Pane
-            className="pane editor-pane"
-            priority={LayoutPriority.High}
-          >
-            <Flex
-              sx={{
-                display: "flex",
-                overflow: "hidden",
-                flex: 1,
-                flexDirection: "column",
-                bg: "background"
-              }}
+              <NavigationMenu
+                toggleNavigationContainer={(state) => {
+                  setShow(state || !show);
+                }}
+                isTablet={isNarrow}
+              />
+            </Pane>
+          )}
+          {!isFocusMode && show ? (
+            <Pane
+              id="list-pane"
+              initialSize={380}
+              style={{ flex: 1, display: "flex" }}
+              snapSize={200}
+              maxSize={500}
+              className="list-pane"
             >
-              {isAppLoaded && (
-                <SuspenseLoader
-                  fallback={<EditorLoader />}
-                  component={HashRouter}
-                  condition={isAppLoaded}
-                />
-              )}
-            </Flex>
-          </Allotment.Pane>
-        </Allotment>
-      </Flex>
+              <ScopedThemeProvider
+                className="listMenu"
+                scope="list"
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  flex: 1,
+                  bg: "background",
+                  borderRight: "1px solid var(--separator)"
+                }}
+              >
+                <CachedRouter />
+              </ScopedThemeProvider>
+            </Pane>
+          ) : null}
 
+          <Pane
+            id="editor-pane"
+            className="editor-pane"
+            style={{
+              flex: 1,
+              display: "flex",
+              backgroundColor: "var(--background)",
+              overflow: "hidden",
+              flexDirection: "column"
+            }}
+          >
+            {<HashRouter />}
+          </Pane>
+        </SplitPane>
+      </Flex>
       <StatusBar />
     </>
   );
 }
 
-function MobileAppContents({ isAppLoaded }: { isAppLoaded: boolean }) {
+function MobileAppContents() {
+  const { ref, slideToIndex } = useSlider({
+    onSliding: (_e, { position }) => {
+      const offset = 70;
+      const width = 300;
+
+      const percent = offset - (position / width) * offset;
+      const overlay = document.getElementById("overlay");
+      if (!overlay) return;
+      if (percent > 0) {
+        overlay.style.opacity = `${percent}%`;
+        overlay.style.pointerEvents = "all";
+      } else {
+        overlay.style.opacity = "0%";
+        overlay.style.pointerEvents = "none";
+      }
+    },
+    onChange: (e, { slide, lastSlide }) => {
+      slide.node.classList.add("pane-active");
+      lastSlide?.node.classList.remove("pane-active");
+    }
+  });
+
+  useEffect(() => {
+    const toggleSideMenuEvent = AppEventManager.subscribe(
+      AppEvents.toggleSideMenu,
+      (state) => slideToIndex(state ? 0 : 1)
+    );
+    const toggleEditorEvent = AppEventManager.subscribe(
+      AppEvents.toggleEditor,
+      (state) => slideToIndex(state ? 2 : 1)
+    );
+    return () => {
+      toggleSideMenuEvent.unsubscribe();
+      toggleEditorEvent.unsubscribe();
+    };
+  }, [slideToIndex]);
+
   return (
     <FlexScrollContainer
+      scrollRef={ref}
       id="slider"
       suppressScrollX
       style={{
@@ -233,17 +289,18 @@ function MobileAppContents({ isAppLoaded }: { isAppLoaded: boolean }) {
       }}
     >
       <Flex
+        className="mobile-nav-pane"
         sx={{
           scrollSnapAlign: "start",
           scrollSnapStop: "always",
-          width: [300, 60],
+          width: 300,
           flexShrink: 0
         }}
       >
         <NavigationMenu toggleNavigationContainer={() => {}} isTablet={false} />
       </Flex>
       <Flex
-        className="listMenu"
+        className="mobile-list-pane"
         variant="columnFill"
         sx={{
           position: "relative",
@@ -253,13 +310,10 @@ function MobileAppContents({ isAppLoaded }: { isAppLoaded: boolean }) {
           width: "100vw"
         }}
       >
-        <SuspenseLoader
-          condition={isAppLoaded}
-          component={CachedRouter}
-          fallback={<ViewLoader />}
-        />
+        <CachedRouter />
         <Box
           id="overlay"
+          onClick={() => slideToIndex(1)}
           sx={{
             position: "absolute",
             width: "100%",
@@ -275,6 +329,7 @@ function MobileAppContents({ isAppLoaded }: { isAppLoaded: boolean }) {
         />
       </Flex>
       <Flex
+        className="mobile-editor-pane"
         sx={{
           scrollSnapAlign: "start",
           scrollSnapStop: "always",
@@ -283,11 +338,7 @@ function MobileAppContents({ isAppLoaded }: { isAppLoaded: boolean }) {
           width: "100vw"
         }}
       >
-        <SuspenseLoader
-          fallback={<EditorLoader />}
-          component={HashRouter}
-          condition={isAppLoaded}
-        />
+        <HashRouter />
       </Flex>
     </FlexScrollContainer>
   );

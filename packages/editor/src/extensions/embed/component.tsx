@@ -19,18 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { Box, Flex, Embed } from "@theme-ui/components";
 import { useRef, useState } from "react";
-import { EmbedAlignmentOptions, EmbedAttributes } from "./embed";
-import { SelectionBasedReactNodeViewProps } from "../react";
-import { DesktopOnly } from "../../components/responsive";
-import { ToolbarGroup } from "../../toolbar/components/toolbar-group";
-import { Icons } from "../../toolbar";
+import { EmbedAlignmentOptions, EmbedAttributes } from "./embed.js";
+import { ReactNodeViewProps } from "../react/index.js";
+import { DesktopOnly } from "../../components/responsive/index.js";
+import { ToolbarGroup } from "../../toolbar/components/toolbar-group.js";
+import { Icons } from "../../toolbar/index.js";
 import { Icon } from "@notesnook/ui";
-import { Resizer } from "../../components/resizer";
+import { Resizer } from "../../components/resizer/index.js";
 
 export function EmbedComponent(
-  props: SelectionBasedReactNodeViewProps<
-    EmbedAttributes & EmbedAlignmentOptions
-  >
+  props: ReactNodeViewProps<EmbedAttributes & EmbedAlignmentOptions>
 ) {
   const { editor, updateAttributes, selected, node } = props;
   const [isLoading, setIsLoading] = useState(true);
@@ -97,6 +95,7 @@ export function EmbedComponent(
                 >
                   <ToolbarGroup
                     editor={editor}
+                    groupId="embedTools"
                     tools={[
                       "embedAlignLeft",
                       "embedAlignCenter",
@@ -116,9 +115,10 @@ export function EmbedComponent(
         </Box>
         <Embed
           ref={embedRef}
-          src={src}
+          src={src.startsWith("javascript:") ? "about:blank" : src}
           width={"100%"}
           height={"100%"}
+          sandbox="allow-scripts"
           sx={{
             bg: "var(--background-secondary)",
             border: selected

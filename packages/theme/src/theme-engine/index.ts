@@ -18,16 +18,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { createContext, useContext, useMemo } from "react";
+import { create } from "zustand";
+import _ThemeDark from "./themes/default-dark.json";
+import _ThemeLight from "./themes/default-light.json";
 import {
-  ThemeDefinition,
   ThemeCompatibilityVersion,
+  ThemeDefinition,
   ThemeScopes,
   VariantsWithStaticColors
-} from "./types";
-import { create } from "zustand";
-import _ThemeLight from "./themes/default-light.json";
-import _ThemeDark from "./themes/default-dark.json";
-import { buildVariants } from "./utils";
+} from "./types.js";
+import { buildVariants } from "./utils.js";
 
 const ThemeLight = _ThemeLight as ThemeDefinition;
 const ThemeDark = _ThemeDark as ThemeDefinition;
@@ -43,7 +43,7 @@ type ThemeEngineState = {
   setTheme: (theme: ThemeDefinition) => void;
 };
 const useThemeEngineStore = create<ThemeEngineState>((set) => ({
-  theme: ThemeLight,
+  theme: globalThis.DEFAULT_THEME || ThemeLight,
   setTheme: (theme) => set({ theme })
 }));
 
@@ -73,5 +73,5 @@ export const useCurrentThemeScope = () => useContext(ThemeScopeContext);
 export const ScopedThemeProvider = ThemeScopeContext.Provider;
 export const THEME_COMPATIBILITY_VERSION: ThemeCompatibilityVersion = 1;
 export { ThemeLight, ThemeDark, useThemeEngineStore, type ThemeEngineState };
-export { getPreviewColors, themeToCSS } from "./utils";
-export { validateTheme } from "./validator";
+export { getPreviewColors, themeToCSS } from "./utils.js";
+export { validateTheme } from "./validator.js";

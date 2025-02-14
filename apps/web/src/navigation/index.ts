@@ -18,36 +18,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useState } from "react";
-import EventManager from "@notesnook/core/dist/utils/event-manager";
+import { EventManager } from "@notesnook/core";
 import Config from "../utils/config";
-import { HashRoute } from "./hash-routes";
-import { ReplaceParametersInPath } from "./types";
+import type { HashRoute } from "./hash-routes";
+import type { ReplaceParametersInPath } from "./types";
 
-export function navigate(url: string): void;
-export function navigate(url: string, replace?: boolean): void;
 export function navigate(
   url: string,
-  query?: URLSearchParams,
-  replace?: boolean
-): void;
-export function navigate(
-  url: string,
-  replaceOrQuery?: boolean | URLSearchParams,
-  replace?: boolean
+  options: {
+    notify?: boolean;
+    replace?: boolean;
+    query?: URLSearchParams;
+  } = {}
 ) {
-  if (replaceOrQuery !== null && typeof replaceOrQuery === "object") {
-    url += "?" + replaceOrQuery.toString();
-  } else if (replace === undefined && replaceOrQuery !== undefined) {
-    replace = replaceOrQuery;
-  } else if (replace === undefined && replaceOrQuery === undefined) {
-    replace = false;
-  }
-
+  const { notify, query, replace } = options;
+  if (query !== null && typeof query === "object")
+    url += "?" + query.toString();
   if (replace)
     window.history.replaceState(null, "", makeURL(url, getCurrentHash()));
   else window.history.pushState(null, "", makeURL(url, getCurrentHash()));
 
-  dispatchEvent(new PopStateEvent("popstate"));
+  if (notify) dispatchEvent(new PopStateEvent("popstate"));
 }
 
 type HashNavigateOptions = {

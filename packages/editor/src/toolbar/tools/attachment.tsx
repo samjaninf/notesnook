@@ -17,12 +17,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { ToolProps } from "../types";
-import { ToolButton } from "../components/tool-button";
-import { MoreTools } from "../components/more-tools";
-import { useToolbarLocation } from "../stores/toolbar-store";
-import { findSelectedNode } from "../../utils/prosemirror";
-import { Attachment } from "../../extensions/attachment";
+import { ToolProps } from "../types.js";
+import { ToolButton } from "../components/tool-button.js";
+import { MoreTools } from "../components/more-tools.js";
+import { useToolbarLocation } from "../stores/toolbar-store.js";
+import { findSelectedNode } from "../../utils/prosemirror.js";
+import { Attachment } from "../../extensions/attachment/index.js";
 
 export function AttachmentSettings(props: ToolProps) {
   const { editor } = props;
@@ -56,7 +56,7 @@ export function DownloadAttachment(props: ToolProps) {
           findSelectedNode(editor, "image");
 
         const attachment = (attachmentNode?.attrs || {}) as Attachment;
-        editor.current?.chain().focus().downloadAttachment(attachment).run();
+        editor.storage.downloadAttachment?.(attachment);
       }}
     />
   );
@@ -81,7 +81,7 @@ export function PreviewAttachment(props: ToolProps) {
           findSelectedNode(editor, "image");
 
         const attachment = (attachmentNode?.attrs || {}) as Attachment;
-        editor.current?.commands.previewAttachment(attachment);
+        editor.storage.previewAttachment?.(attachment);
       }}
     />
   );
@@ -93,7 +93,7 @@ export function RemoveAttachment(props: ToolProps) {
     <ToolButton
       {...props}
       toggled={false}
-      onClick={() => editor.current?.chain().focus().removeAttachment().run()}
+      onClick={() => editor.chain().focus().removeAttachment().run()}
     />
   );
 }

@@ -25,13 +25,14 @@ import NotificationSounds, {
 } from "react-native-notification-sounds";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { IconButton } from "../../components/ui/icon-button";
-import { PressableButton } from "../../components/ui/pressable";
+import { Pressable } from "../../components/ui/pressable";
 import Paragraph from "../../components/ui/typography/paragraph";
 import Notifications from "../../services/notifications";
 import SettingsService from "../../services/settings";
 import { useSettingStore } from "../../stores/use-setting-store";
 import { useThemeColors } from "@notesnook/theme";
 import { SIZE } from "../../utils/size";
+import { strings } from "@notesnook/intl";
 
 const SoundItem = ({
   playingSoundId,
@@ -49,8 +50,8 @@ const SoundItem = ({
   const { colors } = useThemeColors();
   const isPlaying = playingSoundId === item.soundID;
   return (
-    <PressableButton
-      customStyle={{
+    <Pressable
+      style={{
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -96,7 +97,7 @@ const SoundItem = ({
 
       {item.soundID === "defaultSound" ? null : (
         <IconButton
-          type={isPlaying ? "grayAccent" : "gray"}
+          type={isPlaying ? "secondaryAccented" : "plain"}
           size={22}
           name={isPlaying ? "pause" : "play"}
           color={isPlaying ? colors.primary.accent : colors.primary.icon}
@@ -114,7 +115,7 @@ const SoundItem = ({
           }}
         />
       )}
-    </PressableButton>
+    </Pressable>
   );
 };
 
@@ -131,7 +132,7 @@ export default function SoundPicker() {
       setRingtones([
         {
           soundID: "defaultSound",
-          title: "Default sound",
+          title: strings.defaultSound(),
           url: ""
         },
         ...results

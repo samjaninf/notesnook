@@ -5,15 +5,17 @@ runs:
   using: "composite"
   steps:
     - name: Setup Node
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: 16.x
+        node-version: 20.x
         cache: "npm"
         cache-dependency-path: |
           package-lock.json
           apps/mobile/package-lock.json
           apps/desktop/package-lock.json
           apps/web/package-lock.json
+          apps/monograph/package-lock.json
+          apps/theme-builder/package-lock.json
           extensions/web-clipper/package-lock.json
           packages/core/package-lock.json
           packages/crypto/package-lock.json
@@ -24,3 +26,4 @@ runs:
           packages/logger/package-lock.json
           packages/streamable-fs/package-lock.json
           packages/theme/package-lock.json
+          packages/intl/package-lock.json

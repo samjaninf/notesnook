@@ -20,8 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { test } from "vitest";
 import {
   formatCodeblocks,
-  convertBrToSingleSpacedParagraphs
-} from "../clipboard-dom-parser";
+  convertBrToSingleSpacedParagraphs,
+  convertGoogleDocsChecklist
+} from "../clipboard-dom-parser.js";
 
 const cases = [
   [`<p>line 1<br>line 2</p>`],
@@ -77,11 +78,34 @@ and yet, we somehow manage to get by.<br>
   you</p>
   
   </div>`
+  ],
+  [
+    `<div>
+  <p style="line-height: 100%; margin-bottom: 0in">
+  I am not talking to you</p>
+  <br/>
+  <p>I am talking to you</p>
+  </div>`
+  ],
+  [
+    `<div>
+    <!--StartFragment--><p><span>Hello</span></p><br><br><br><br><br><p><span >world</span></p><!--EndFragment-->
+    
+    </div>`
+  ],
+  [
+    `<div>
+    <!--StartFragment--><meta charset="utf-8"><h1><span >Write notes</span></h1><br><p dir="ltr" ><span >Welcome of </span><a><span >Notesnook</span></a><span >, an syncing.</span></p><br><p dir="ltr" ><span >Enjoy the read!</span></p><br><p dir="ltr" ><span ><span ><img></span></span></p><br><p dir="ltr" ><span >vision?</span></p><br><p dir="ltr" ><span >everyone means</span></p><!--EndFragment-->
+    
+    </div>`
+  ],
+  [
+    `<ul xmlns="http://www.w3.org/1999/xhtml" data-block-id="A9jEKaAm" class="checklist"><li class="checklist--item"><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a>hello <a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a></li><li class="checklist--item"><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a></li><li class="checklist--item"><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hellohello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello hello hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a><br /><a target="_blank" rel="noopener noreferrer nofollow" href="https://google.com">hello</a></li><li class="checklist--item">vsvdsavdsa</li><li class="checklist--item">vadsvasdv</li></ul><p xmlns="http://www.w3.org/1999/xhtml" data-block-id="CuscJzDm" data-spacing="double"></p>`
   ]
 ];
 
 for (const testCase of cases) {
-  const [html, expected] = testCase;
+  const [html] = testCase;
   test(`convert br tags to paragraphs`, (t) => {
     const element = new DOMParser().parseFromString(html, "text/html");
     convertBrToSingleSpacedParagraphs(element);
@@ -116,6 +140,20 @@ for (const codeBlock of codeBlocks) {
   test(`properly format codeblocks`, (t) => {
     const element = new DOMParser().parseFromString(codeBlock, "text/html");
     formatCodeblocks(element);
+    t.expect(element.body.innerHTML.trim()).toMatchSnapshot();
+  });
+}
+
+const checkLists = [
+  `<div>
+    <!--StartFragment--><meta charset="utf-8"><ul  id="docs-internal-guid-0d9a5db3-7fff-ab55-e7ca-b178e1031970"><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="1"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Adsjkfhasdf</span></p></li><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="1"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Asdfsadf</span></p></li><li dir="ltr" role="checkbox" aria-checked="true"  aria-level="1"><img    alt="checked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Asdfsda</span></p></li><li dir="ltr" role="checkbox" aria-checked="true"  aria-level="1"><img    alt="checked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Fasd</span></p></li><li dir="ltr" role="checkbox" aria-checked="true"  aria-level="1"><img    alt="checked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Fasd</span></p></li><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="1"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >F</span></p></li><li dir="ltr" role="checkbox" aria-checked="true"  aria-level="1"><img    alt="checked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >akcasb</span></p></li><ul ><li dir="ltr" role="checkbox" aria-checked="true"  aria-level="2"><img    alt="checked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Asdf</span></p></li><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="2"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Asdcasdc</span></p></li><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="2"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >sdac</span></p></li></ul><li dir="ltr" role="checkbox" aria-checked="false"  aria-level="1"><img    alt="unchecked" aria-roledescription="checkbox" ><p dir="ltr"  role="presentation"><span >Asdfsda</span></p></li></ul><!--EndFragment-->
+    
+    </div>`
+];
+for (const checkList of checkLists) {
+  test(`convert google docs checklist`, (t) => {
+    const element = new DOMParser().parseFromString(checkList, "text/html");
+    convertGoogleDocsChecklist(element);
     t.expect(element.body.innerHTML.trim()).toMatchSnapshot();
   });
 }

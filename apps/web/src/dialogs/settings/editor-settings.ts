@@ -21,32 +21,27 @@ import { SettingsGroup } from "./types";
 import {
   editorConfig,
   onEditorConfigChange,
-  setEditorConfig
-} from "../../components/editor/context";
+  useEditorManager
+} from "../../components/editor/manager";
 import { useStore as useSettingStore } from "../../stores/setting-store";
 import { getFonts } from "@notesnook/editor";
 import { useSpellChecker } from "../../hooks/use-spell-checker";
 import { SpellCheckerLanguages } from "./components/spell-checker-languages";
 
 import { CustomizeToolbar } from "./components/customize-toolbar";
+import { DictionaryWords } from "./components/dictionary-words";
+import { strings } from "@notesnook/intl";
 
 export const EditorSettings: SettingsGroup[] = [
   {
     key: "editor",
     section: "editor",
-    header: "Editor",
+    header: strings.editor(),
     settings: [
       {
         key: "default-title",
-        title: "Default title format",
-        description: `Use the following key to format the title:
-
-$date$: Current date
-$time$: Current time
-$count$: Number of notes + 1
-$headline$: Use starting line of the note as title
-$timestamp$: Full date & time without any spaces or other
-symbols (e.g. 202305261253)`,
+        title: strings.titleFormat(),
+        description: strings.titleFormatDesc(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((c) => c.titleFormat, listener),
         components: [
@@ -61,7 +56,7 @@ symbols (e.g. 202305261253)`,
       },
       {
         key: "default-font",
-        title: "Default font family",
+        title: strings.defaultFontFamily(),
         onStateChange: (listener) =>
           onEditorConfigChange((c) => c.fontFamily, listener),
         components: [
@@ -73,16 +68,17 @@ symbols (e.g. 202305261253)`,
             })),
             selectedOption: () => editorConfig().fontFamily,
             onSelectionChanged: (value) => {
-              setEditorConfig({ fontFamily: value });
+              useEditorManager
+                .getState()
+                .setEditorConfig({ fontFamily: value });
             }
           }
         ]
       },
       {
         key: "default-font-size",
-        title: "Default font size",
-        description:
-          "Change the default font size used in the editor. Minimum = 8px; Maximum = 120px.",
+        title: strings.defaultFontSize(),
+        description: strings.defaultFontSizeDesc(),
         onStateChange: (listener) =>
           onEditorConfigChange((c) => c.fontSize, listener),
         components: [
@@ -92,15 +88,15 @@ symbols (e.g. 202305261253)`,
             max: 120,
             min: 8,
             defaultValue: () => editorConfig().fontSize,
-            onChange: (value) => setEditorConfig({ fontSize: value })
+            onChange: (value) =>
+              useEditorManager.getState().setEditorConfig({ fontSize: value })
           }
         ]
       },
       {
         key: "double-spacing",
-        title: "Double spaced paragraphs",
-        description:
-          "Use double spacing between paragraphs and when you press Enter in the editor.",
+        title: strings.doubleSpacedLines(),
+        description: strings.doubleSpacedLinesDesc(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((c) => c.doubleSpacedParagraphs, listener),
         components: [
@@ -111,13 +107,27 @@ symbols (e.g. 202305261253)`,
               useSettingStore.getState().toggleDoubleSpacedParagraphs()
           }
         ]
+      },
+      {
+        key: "markdown-shortcuts",
+        title: strings.mardownShortcuts(),
+        description: strings.mardownShortcutsDesc(),
+        onStateChange: (listener) =>
+          useSettingStore.subscribe((c) => c.markdownShortcuts, listener),
+        components: [
+          {
+            type: "toggle",
+            isToggled: () => useSettingStore.getState().markdownShortcuts,
+            toggle: () => useSettingStore.getState().toggleMarkdownShortcuts()
+          }
+        ]
       }
     ]
   },
   {
     key: "spell-check",
     section: "editor",
-    header: "Spell check",
+    header: strings.spellCheck(),
     isHidden: () => !IS_DESKTOP_APP,
     onRender: () => {
       useSpellChecker.getState().refresh();
@@ -125,7 +135,7 @@ symbols (e.g. 202305261253)`,
     settings: [
       {
         key: "enable-spellchecker",
-        title: "Enable spell checker",
+        title: strings.enableSpellChecker(),
         onStateChange: (listener) =>
           useSpellChecker.subscribe((c) => c.enabled, listener),
         components: [
@@ -138,8 +148,8 @@ symbols (e.g. 202305261253)`,
       },
       {
         key: "spell-checker-languages",
-        title: "Languages",
-        description: "Select the languages the spell checker should check in.",
+        title: strings.languages(),
+        description: strings.spellCheckerLanguagesDescription(),
         isHidden: () => !useSpellChecker.getState().enabled,
         onStateChange: (listener) =>
           useSpellChecker.subscribe((c) => c.enabled, listener),
@@ -149,17 +159,27 @@ symbols (e.g. 202305261253)`,
             component: SpellCheckerLanguages
           }
         ]
+      },
+      {
+        key: "custom-dictionay-words",
+        title: strings.customDictionaryWords(),
+        components: [
+          {
+            type: "custom",
+            component: DictionaryWords
+          }
+        ]
       }
     ]
   },
   {
     key: "toolbar",
     section: "editor",
-    header: "Toolbar",
+    header: strings.toolbar(),
     settings: [
       {
         key: "customize-toolbar",
-        title: "Customize toolbar",
+        title: strings.customizeToolbar(),
         components: [
           {
             type: "custom",

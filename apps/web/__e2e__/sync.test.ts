@@ -20,6 +20,9 @@ import { test, Browser, expect } from "@playwright/test";
 import { AppModel } from "./models/app.model";
 import { USER } from "./utils";
 
+// run this test file sequentially
+test.describe.configure({ mode: "serial" });
+
 async function createDevice(browser: Browser) {
   // Create two isolated browser contexts
   const context = await browser.newContext();
@@ -28,7 +31,7 @@ async function createDevice(browser: Browser) {
   const app = new AppModel(page);
   await app.auth.goto();
   await app.auth.login(USER.CURRENT);
-  await app.waitForSync();
+  await app.waitForSync("synced");
 
   return app;
 }
@@ -39,20 +42,22 @@ async function actAndSync<T>(
 ) {
   const results = await Promise.all([
     ...actions.filter((a) => !!a),
-    ...devices.map((d) => d.waitForSync("completed"))
+    ...devices.map((d) =>
+      d.waitForSync("syncing").then(() => d.waitForSync("synced"))
+    )
   ]);
 
   await Promise.all(devices.map((d) => d.page.waitForTimeout(2000)));
   return results.slice(0, actions.length) as T[];
 }
 
-const NOTE = {
-  title: "Real-time sync test note 1"
-};
-
-test(`edits in a note opened on 2 devices should sync in real-time`, async ({
+test(`content edits in a note opened on 2 devices in multiple tabs should sync in real-time`, async ({
   browser
 }, info) => {
+  const NOTE = {
+    title: `Note ${makeid(20)}`
+  };
+
   info.setTimeout(70 * 1000);
   const newContent = makeid(24).repeat(2);
 
@@ -60,24 +65,76 @@ test(`edits in a note opened on 2 devices should sync in real-time`, async ({
     createDevice(browser),
     createDevice(browser)
   ]);
+
   const [notesA, notesB] = await Promise.all(
     [deviceA, deviceB].map((d) => d.goToNotes())
   );
-  const noteB =
-    (await notesB.findNote(NOTE)) ||
-    (await actAndSync([deviceA, deviceB], notesB.createNote(NOTE)))[0];
+  const noteB = (
+    await actAndSync([deviceA, deviceB], notesB.createNote(NOTE))
+  )[0];
   const noteA = await notesA.findNote(NOTE);
   await Promise.all([noteA, noteB].map((note) => note?.openNote()));
+  await noteA?.openNote(true);
 
-  await actAndSync([deviceA, deviceB], notesB.editor.clear());
-  expect(await notesA.editor.getContent("text")).toBe("");
-  expect(await notesB.editor.getContent("text")).toBe("");
+  if ((await notesB.editor.getContent("text")) !== "")
+    await actAndSync([deviceA, deviceB], notesB.editor.clear());
+  await expect(notesA.editor.content).toBeEmpty();
+  await expect(notesB.editor.content).toBeEmpty();
   await actAndSync([deviceA, deviceB], notesB.editor.setContent(newContent));
 
   expect(noteA).toBeDefined();
   expect(noteB).toBeDefined();
-  expect(await notesA.editor.getContent("text")).toBe(newContent);
-  expect(await notesB.editor.getContent("text")).toBe(newContent);
+  await expect(notesA.editor.content).toHaveText(newContent);
+  await expect(notesB.editor.content).toHaveText(newContent);
+  const tabsA = await notesA.editor.getTabs();
+  await tabsA[0].click();
+  await expect(notesA.editor.content).toHaveText(newContent);
+
+  await (await deviceA.goToSettings())?.logout();
+  await (await deviceB.goToSettings())?.logout();
+});
+
+test(`title edits in a note opened on 2 devices in multiple tabs should sync in real-time`, async ({
+  browser
+}, info) => {
+  const NOTE = {
+    title: `Note ${makeid(20)}`
+  };
+
+  info.setTimeout(70 * 1000);
+  const newContent = makeid(24).repeat(2);
+
+  const [deviceA, deviceB] = await Promise.all([
+    createDevice(browser),
+    createDevice(browser)
+  ]);
+
+  const [notesA, notesB] = await Promise.all(
+    [deviceA, deviceB].map((d) => d.goToNotes())
+  );
+  const noteB = (
+    await actAndSync([deviceA, deviceB], notesB.createNote(NOTE))
+  )[0];
+  const noteA = await notesA.findNote(NOTE);
+  await Promise.all([noteA, noteB].map((note) => note?.openNote()));
+  await noteA?.openNote(true);
+
+  if ((await notesB.editor.getContent("text")) !== "")
+    await actAndSync([deviceA, deviceB], notesB.editor.clear());
+  await expect(notesA.editor.content).toBeEmpty();
+  await expect(notesB.editor.content).toBeEmpty();
+  await actAndSync([deviceA, deviceB], notesB.editor.setTitle(newContent));
+
+  expect(noteA).toBeDefined();
+  expect(noteB).toBeDefined();
+  expect(await notesA.editor.getTitle()).toBe(newContent);
+  expect(await notesB.editor.getTitle()).toBe(newContent);
+  const tabsA = await notesA.editor.getTabs();
+  await tabsA[0].click();
+  expect(await notesA.editor.getTitle()).toBe(newContent);
+
+  await (await deviceA.goToSettings())?.logout();
+  await (await deviceB.goToSettings())?.logout();
 });
 
 function makeid(length: number) {

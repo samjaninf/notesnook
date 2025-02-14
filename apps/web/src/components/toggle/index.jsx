@@ -18,11 +18,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import { useCallback, useState } from "react";
-import { showBuyDialog } from "../../common/dialog-controller";
 import Tip from "../tip";
 import { isUserPremium } from "../../hooks/use-is-user-premium";
 import { Flex, Switch } from "@theme-ui/components";
 import { Loading } from "../icons";
+import { BuyDialog } from "../../dialogs/buy-dialog/buy-dialog";
 
 function Toggle(props) {
   const {
@@ -34,7 +34,8 @@ function Toggle(props) {
     onlyIf,
     premium,
     testId,
-    disabled
+    disabled,
+    tip
   } = props;
   const [isLoading, setIsLoading] = useState(false);
   const onClick = useCallback(async () => {
@@ -46,7 +47,7 @@ function Toggle(props) {
         setIsLoading(false);
       }
     } else {
-      await showBuyDialog();
+      await BuyDialog.show({});
     }
   }, [onToggled, premium, isToggled]);
 
@@ -68,7 +69,11 @@ function Toggle(props) {
         "& > label": { width: "auto", flexShrink: 0 }
       }}
     >
-      <Tip text={title} tip={isToggled ? onTip : offTip} sx={{ mr: 2 }} />
+      <Tip
+        text={title}
+        tip={tip ? tip : isToggled ? onTip : offTip}
+        sx={{ mr: 2 }}
+      />
       {isLoading ? (
         <Loading size={18} />
       ) : (

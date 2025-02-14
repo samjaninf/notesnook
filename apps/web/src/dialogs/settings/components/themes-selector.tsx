@@ -35,12 +35,13 @@ import {
   ThemesTRPC
 } from "../../../common/themes-router";
 import { ThemeMetadata } from "@notesnook/themes-server";
-import { showThemeDetails } from "../../../common/dialog-controller";
 import { ThemePreview } from "../../../components/theme-preview";
-import { VirtuosoGrid } from "react-virtuoso";
 import { Loader } from "../../../components/loader";
 import { showToast } from "../../../utils/toast";
 import { showFilePicker, readFile } from "../../../utils/file-picker";
+import { VirtualizedGrid } from "../../../components/virtualized-grid";
+import { ThemeDetailsDialog } from "../../theme-details-dialog";
+import { strings } from "@notesnook/intl";
 
 const ThemesClient = ThemesTRPC.createClient({
   links: [
@@ -62,9 +63,9 @@ export function ThemesSelector() {
 }
 
 const COLOR_SCHEMES = [
-  { id: "all", title: "All" },
-  { id: "dark", title: "Dark" },
-  { id: "light", title: "Light" }
+  { id: "all", title: strings.all() },
+  { id: "dark", title: strings.dark() },
+  { id: "light", title: strings.light() }
 ] as const;
 
 function ThemesList() {
@@ -107,6 +108,18 @@ function ThemesList() {
     }
   );
 
+  const items = [
+    {
+      ...darkTheme,
+      previewColors: getPreviewColors(darkTheme)
+    },
+    {
+      ...lightTheme,
+      previewColors: getPreviewColors(lightTheme)
+    },
+    ...(themes.data?.pages.flatMap((a) => a.themes) || [])
+  ];
+
   const setTheme = useCallback(
     async (theme: ThemeMetadata) => {
       if (isThemeCurrentlyApplied(theme.id)) return;
@@ -122,7 +135,10 @@ function ThemesList() {
       } catch (e) {
         console.error(e);
         if (e instanceof Error)
-          showToast("error", "Failed to install theme. Error: " + e.message);
+          showToast(
+            "error",
+            `${strings.failedToInstallTheme()} ${strings.error()}: ` + e.message
+          );
       } finally {
         setIsApplying(false);
       }
@@ -133,7 +149,7 @@ function ThemesList() {
   return (
     <>
       <Input
-        placeholder="Search themes"
+        placeholder={strings.searchThemes()}
         sx={{ mt: 2 }}
         onChange={debounce((e) => setSearchQuery(e.target.value), 500)}
       />
@@ -159,16 +175,13 @@ function ThemesList() {
               {filter.title}
             </Button>
           ))}
-          {themes.isLoading && !themes.isInitialLoading ? (
-            <Loading color="accent" />
-          ) : null}
         </Flex>
 
         <Flex sx={{ mt: 2, gap: 1 }}>
           <Button
             variant="secondary"
             onClick={async () => {
-              const file = await showFilePicker({
+              const [file] = await showFilePicker({
                 acceptedFileTypes: "application/json"
               });
               if (!file) return;
@@ -177,10 +190,12 @@ function ThemesList() {
               if (error) return showToast("error", error);
 
               if (
-                await showThemeDetails({
-                  ...theme,
-                  totalInstalls: 0,
-                  previewColors: getPreviewColors(theme)
+                await ThemeDetailsDialog.show({
+                  theme: {
+                    ...theme,
+                    totalInstalls: 0,
+                    previewColors: getPreviewColors(theme)
+                  }
                 })
               ) {
                 setCurrentTheme(theme);
@@ -191,45 +206,29 @@ function ThemesList() {
               flexShrink: 0
             }}
           >
-            Load from file
+            {strings.loadFromFile()}
           </Button>
         </Flex>
       </Flex>
 
       <Box
         sx={{
-          ".virtuoso-grid-list": {
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 2
-          },
           mt: 2
         }}
       >
         {themes.isInitialLoading ? (
-          <Loader title={"Loading themes..."} />
+          <Loader title={strings.loadingThemes()} />
         ) : (
-          <VirtuosoGrid
-            customScrollParent={
-              document.getElementById("settings-scrollbar") || undefined
-            }
-            data={[
-              {
-                ...darkTheme,
-                previewColors: getPreviewColors(darkTheme)
-              },
-              {
-                ...lightTheme,
-                previewColors: getPreviewColors(lightTheme)
-              },
-              ...(themes.data?.pages.flatMap((a) => a.themes) || [])
-            ]}
-            endReached={() =>
+          <VirtualizedGrid
+            columns={2}
+            items={items}
+            getItemKey={(index) => items[index].id}
+            estimatedSize={285}
+            mode="dynamic"
+            onEndReached={() =>
               themes.hasNextPage ? themes.fetchNextPage() : null
             }
-            context={{ darkTheme, lightTheme, setTheme }}
-            computeItemKey={(_index, item) => item.id}
-            itemContent={(_index, theme) => (
+            renderItem={({ item: theme }) => (
               <ThemeItem
                 key={theme.id}
                 theme={theme}
@@ -240,6 +239,9 @@ function ThemesList() {
             )}
           />
         )}
+        {!themes.isInitialLoading && themes.isFetching ? (
+          <Loading color="accent" sx={{ mt: 2 }} />
+        ) : null}
       </Box>
     </>
   );
@@ -270,7 +272,7 @@ function ThemeItem(props: ThemeItemProps) {
         }
       }}
       onClick={async () => {
-        if (await showThemeDetails(theme)) {
+        if (await ThemeDetailsDialog.show({ theme })) {
           await setTheme(theme);
         }
       }}
@@ -301,8 +303,10 @@ function ThemeItem(props: ThemeItemProps) {
           >
             {isApplying ? (
               <Loading color="accent" size={18} />
+            ) : theme.colorScheme === "dark" ? (
+              strings.setAsDarkTheme()
             ) : (
-              `Set as ${theme.colorScheme}`
+              strings.setAsLightTheme()
             )}
           </Button>
         )}

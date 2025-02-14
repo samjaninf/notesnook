@@ -17,8 +17,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { debounce } from "@notesnook/common";
-
 export const PAGE_VISIBILITY_CHANGE = { ignore: false };
 function visibilityChange() {
   return "msHidden" in document
@@ -36,46 +34,65 @@ function isDocumentHidden() {
     : document.hidden;
 }
 
+export function onNetworkStatusChanged(
+  handler: (status: "online" | "offline") => void
+) {
+  const onlineListener = () => handler("online");
+  const offlineListener = () => handler("online");
+  window.addEventListener("online", onlineListener);
+  window.addEventListener("offline", offlineListener);
+
+  return () => {
+    window.removeEventListener("online", onlineListener);
+    window.removeEventListener("offline", offlineListener);
+  };
+}
+
 export function onPageVisibilityChanged(
   handler: (
-    status: "online" | "offline" | "visibilitychange" | "focus",
-    bool: boolean
+    status: "visibilitychange" | "focus" | "blur",
+    isDocumentHidden: boolean
   ) => void
 ) {
-  window.addEventListener(
-    "online",
-    debounce((_) => {
-      handler("online", false);
-    }, 1000)
-  );
-  window.addEventListener(
-    "offline",
-    debounce((_) => {
-      handler("offline", false);
-    }, 1000)
-  );
+  const onVisibilityChanged = () => {
+    if (isEventIgnored()) return;
 
-  // Handle page visibility change
-  document.addEventListener(
-    visibilityChange(),
-    debounce((_) => {
-      if (PAGE_VISIBILITY_CHANGE.ignore) {
-        PAGE_VISIBILITY_CHANGE.ignore = false;
-        return;
-      }
-      handler("visibilitychange", isDocumentHidden());
-    }, 1000)
-  );
+    handler("visibilitychange", isDocumentHidden());
+  };
 
-  window.addEventListener(
-    "focus",
-    debounce((_) => {
-      if (!window.document.hasFocus()) return;
-      if (PAGE_VISIBILITY_CHANGE.ignore) {
-        PAGE_VISIBILITY_CHANGE.ignore = false;
-        return;
-      }
-      handler("focus", false);
-    }, 1000)
-  );
+  const onFocus = () => {
+    if (isEventIgnored()) return;
+
+    if (!window.document.hasFocus()) return;
+    handler("focus", false);
+  };
+
+  const onBlur = () => {
+    if (isEventIgnored()) return;
+
+    if (window.document.hasFocus()) return;
+    handler("blur", true);
+  };
+
+  document.addEventListener(visibilityChange(), onVisibilityChanged);
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("blur", onBlur);
+  window.addEventListener("pageshow", onFocus);
+  window.addEventListener("pagehide", onBlur);
+
+  return () => {
+    document.removeEventListener(visibilityChange(), onVisibilityChanged);
+    window.removeEventListener("focus", onFocus);
+    window.removeEventListener("blur", onBlur);
+    window.removeEventListener("pageshow", onFocus);
+    window.removeEventListener("pagehide", onBlur);
+  };
+}
+
+function isEventIgnored() {
+  if (PAGE_VISIBILITY_CHANGE.ignore) {
+    PAGE_VISIBILITY_CHANGE.ignore = false;
+    return true;
+  }
+  return false;
 }

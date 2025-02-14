@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import React, { PropsWithChildren } from "react";
+import React, { PropsWithChildren, useLayoutEffect } from "react";
 import { MacScrollbar, MacScrollbarProps } from "mac-scrollbar";
 import "mac-scrollbar/dist/mac-scrollbar.css";
 
@@ -54,6 +54,7 @@ type FlexScrollContainerProps = {
   id?: string;
   className?: string;
   style?: React.CSSProperties;
+  scrollRef?: React.Ref<HTMLElement>;
 } & MacScrollbarProps;
 
 export function FlexScrollContainer({
@@ -61,11 +62,13 @@ export function FlexScrollContainer({
   children,
   style,
   className,
+  scrollRef,
   ...restProps
 }: PropsWithChildren<FlexScrollContainerProps>) {
   return (
     <MacScrollbar
       {...restProps}
+      ref={scrollRef}
       id={id}
       className={className}
       style={style}

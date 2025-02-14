@@ -16,15 +16,15 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-import { isReminderActive } from "@notesnook/core/dist/collections/reminders";
+import { isReminderActive } from "@notesnook/core";
 import React from "react";
 import { ViewStyle } from "react-native";
 
-import { Reminder } from "../../../services/notifications";
 import { useThemeColors } from "@notesnook/theme";
 import { SIZE } from "../../../utils/size";
 import { Button, ButtonProps } from "../button";
 import { getFormattedReminderTime } from "@notesnook/common";
+import { Reminder } from "@notesnook/core";
 
 export const ReminderTime = ({
   checkIsActive = true,
@@ -51,11 +51,10 @@ export const ReminderTime = ({
     <Button
       title={time}
       key={reminder.id}
-      height={20}
       icon="bell"
       fontSize={SIZE.xs}
       iconSize={SIZE.sm}
-      type="grayBg"
+      type="secondary"
       buttonType={
         isTodayOrTomorrow
           ? {
@@ -67,12 +66,10 @@ export const ReminderTime = ({
         marginRight: 0
       }}
       style={{
+        height: "auto",
         borderRadius: 5,
-        marginRight: 5,
-        borderWidth: 0.5,
         borderColor: colors.primary.border,
         paddingHorizontal: 6,
-        marginBottom: 5,
         ...(style as ViewStyle)
       }}
       {...props}

@@ -24,7 +24,7 @@ import Config from "../utils/config";
 import { isUserPremium } from "../hooks/use-is-user-premium";
 import { SUBSCRIPTION_STATUS } from "../common/constants";
 import { appVersion } from "../utils/version";
-import { findItemAndDelete } from "@notesnook/core/dist/utils/array";
+import { findItemAndDelete } from "@notesnook/core";
 
 /**
  * @extends {BaseStore<AnnouncementStore>}
@@ -71,7 +71,9 @@ class AnnouncementStore extends BaseStore {
   };
 }
 
-const [useStore, store] = createStore(AnnouncementStore);
+const [useStore, store] = createStore(
+  (set, get) => new AnnouncementStore(set, get)
+);
 export { useStore, store };
 
 export const allowedPlatforms = [

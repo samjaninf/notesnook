@@ -19,34 +19,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { ThemeUIStyleObject } from "@theme-ui/core";
 import { Box, Flex, Image, Text } from "@theme-ui/components";
-import { ImageAttributes } from "./image";
-import { useEffect, useState } from "react";
-import { SelectionBasedReactNodeViewProps } from "../react";
-import { DesktopOnly } from "../../components/responsive";
+import { ImageAttributes } from "./image.js";
+import { useEffect, useRef, useState } from "react";
+import { ReactNodeViewProps } from "../react/index.js";
+import { DesktopOnly } from "../../components/responsive/index.js";
 import { Icon } from "@notesnook/ui";
-import { Icons } from "../../toolbar/icons";
-import { ToolbarGroup } from "../../toolbar/components/toolbar-group";
+import { Icons } from "../../toolbar/icons.js";
+import { ToolbarGroup } from "../../toolbar/components/toolbar-group.js";
 import {
   useIsMobile,
   useToolbarStore
-} from "../../toolbar/stores/toolbar-store";
-import { Resizer } from "../../components/resizer";
+} from "../../toolbar/stores/toolbar-store.js";
+import { Resizer } from "../../components/resizer/index.js";
 import {
   corsify,
   downloadImage,
   revokeBloburl,
   toBlobURL,
   toDataURL
-} from "../../utils/downloader";
-import { motion } from "framer-motion";
-import { useObserver } from "../../hooks/use-observer";
-import { Attachment, ImageAlignmentOptions } from "../attachment";
-import DataURL from "@notesnook/core/dist/utils/dataurl";
-
-export const AnimatedImage = motion(Image);
+} from "../../utils/downloader.js";
+import { useObserver } from "../../hooks/use-observer.js";
+import { Attachment, ImageAlignmentOptions } from "../attachment/index.js";
+import { DataURL } from "@notesnook/common";
 
 export function ImageComponent(
-  props: SelectionBasedReactNodeViewProps<Partial<ImageAttributes>>
+  props: ReactNodeViewProps<Partial<ImageAttributes>>
 ) {
   const { editor, node, selected } = props;
   const { src, alt, title, textDirection, hash, aspectRatio, mime, progress } =
@@ -54,44 +51,54 @@ export function ImageComponent(
   const [bloburl, setBloburl] = useState<string | undefined>(
     toBlobURL("", "image", mime, hash)
   );
+  const controllerRef = useRef(new AbortController());
 
   const isMobile = useIsMobile();
   const { inView, ref: imageRef } = useObserver<HTMLImageElement>({
     threshold: 0.2,
     once: true
   });
+
+  const dom = editor.view.dom;
+
+  const size =
+    editor.view.dom.clientWidth === 0
+      ? node.attrs
+      : clampSize(node.attrs, dom.clientWidth, aspectRatio);
+
   const float = isMobile ? false : node.attrs.float;
 
   let align = node.attrs.align;
   if (!align) align = textDirection ? "right" : "left";
 
   const downloadOptions = useToolbarStore((store) => store.downloadOptions);
-  const isReadonly = !editor.current?.isEditable;
+  const isReadonly = !editor.isEditable;
   const isSVG = !!mime && mime.includes("/svg");
-
-  const { height, width } = clampSize(
-    node.attrs,
-    editor.view.dom.clientWidth,
-    aspectRatio
-  );
 
   useEffect(() => {
     if (!inView) return;
     if (src || !hash || bloburl) return;
     (async function () {
-      const data = await editor.current?.storage
-        .getAttachmentData?.(node.attrs)
-        .catch(() => null);
-      if (typeof data !== "string" || !data) return; // TODO: show error
+      const { hash } = node.attrs;
+      if (hash) {
+        const data = await editor.storage
+          .getAttachmentData?.({
+            type: "image",
+            hash
+          })
+          .catch(() => null);
+        if (typeof data !== "string" || !data) return; // TODO: show error
 
-      setBloburl(toBlobURL(data, "image", node.attrs.mime, hash));
+        setBloburl(toBlobURL(data, "image", node.attrs.mime, hash));
+      }
     })();
   }, [inView]);
 
   useEffect(() => {
+    const controller = controllerRef.current;
     return () => {
-      if (!hash) return;
-      revokeBloburl(hash);
+      controller.abort();
+      if (hash) revokeBloburl(hash);
     };
   }, []);
 
@@ -100,6 +107,7 @@ export function ImageComponent(
       <Box
         sx={{
           ...getAlignmentStyles(node.attrs),
+          height: float ? size.height : "unset",
           position: "relative",
           mt: isSVG ? `24px` : 0,
           ":hover .drag-handle, :active .drag-handle": {
@@ -111,8 +119,8 @@ export function ImageComponent(
           style={{ marginTop: 5 }}
           enabled={editor.isEditable && !float}
           selected={selected}
-          width={width}
-          height={height}
+          width={size.width}
+          height={size.height}
           onResize={(width, height) => {
             editor.commands.setImageSize({ width, height });
           }}
@@ -131,6 +139,7 @@ export function ImageComponent(
               >
                 <ToolbarGroup
                   editor={editor}
+                  groupId="imageTools"
                   tools={
                     isReadonly
                       ? [
@@ -220,8 +229,8 @@ export function ImageComponent(
                 position: "absolute",
                 top: 0,
                 left: 0,
-                width: editor.isEditable ? "100%" : width,
-                height: editor.isEditable ? "100%" : height,
+                width: editor.isEditable && !float ? "100%" : size.width,
+                height: editor.isEditable && !float ? "100%" : size.height,
                 bg: "background-secondary",
                 border: selected
                   ? "2px solid var(--accent)"
@@ -236,42 +245,42 @@ export function ImageComponent(
             >
               <Icon
                 path={Icons.image}
-                size={width ? width * 0.2 : 72}
+                size={size.width ? size.width * 0.2 : 72}
                 color="gray"
               />
             </Flex>
           )}
-          <AnimatedImage
-            as={isSVG ? "object" : "img"}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: bloburl || src ? 1 : 0 }}
-            transition={{ duration: 0.2, ease: "easeIn" }}
+          <Image
+            as={isSVG ? "iframe" : "img"}
             data-drag-image
             ref={imageRef}
             alt={alt}
             crossOrigin="anonymous"
             {...(isSVG
               ? {
-                  data: bloburl || corsify(src, downloadOptions?.corsHost),
-                  type: mime
+                  src: bloburl || corsify(src, downloadOptions?.corsHost),
+                  type: mime,
+                  sandbox: ""
                 }
               : {
                   src: bloburl || corsify(src, downloadOptions?.corsHost)
                 })}
             title={title}
             sx={{
+              animation: bloburl || src ? "0.2s ease-in 0s 1 fadeIn" : "none",
               objectFit: "contain",
-              width: editor.isEditable ? "100%" : width,
-              height: editor.isEditable ? "100%" : height,
+              width: editor.isEditable ? "100%" : size.width,
+              height: editor.isEditable ? "100%" : size.height,
               border: selected
                 ? "2px solid var(--accent) !important"
                 : "2px solid transparent !important",
-              borderRadius: "default"
+              borderRadius: "default",
+              ...(isSVG ? { bg: "transparent" } : {})
             }}
             onDoubleClick={() => {
               const { hash, filename, mime, size } = node.attrs;
               if (!!hash && !!filename && !!mime && !!size)
-                editor.current?.commands.previewAttachment({
+                editor.storage.previewAttachment?.({
                   type: "image",
                   hash,
                   filename,
@@ -284,14 +293,21 @@ export function ImageComponent(
 
               const { naturalWidth, naturalHeight, clientHeight, clientWidth } =
                 imageRef.current;
-              const orignalWidth = naturalWidth || clientWidth;
-              const orignalHeight = naturalHeight || clientHeight;
-              const naturalAspectRatio = orignalWidth / orignalHeight;
-              const fixedDimensions = fixAspectRatio(width, naturalAspectRatio);
+              const originalWidth = naturalWidth || clientWidth;
+              const originalHeight = naturalHeight || clientHeight;
+              const naturalAspectRatio = originalWidth / originalHeight;
+              const fixedDimensions = fixAspectRatio(
+                size.width ?? originalWidth,
+                naturalAspectRatio
+              );
 
               if (src && !DataURL.isValid(src) && canParse(src)) {
-                const image = await downloadImage(src, downloadOptions);
-                if (!image) return;
+                const image = await downloadImage(src, {
+                  ...downloadOptions,
+                  signal: controllerRef.current.signal
+                }).catch(console.error);
+                if (!image || !imageRef.current) return;
+
                 const { url, size, blob, mimeType } = image;
                 imageRef.current.src = url;
                 const dataurl = await toDataURL(blob);
@@ -317,7 +333,7 @@ export function ImageComponent(
                     { query: makeImageQuery(src, hash), ignoreEdit: true }
                   )
                 );
-              } else if (height !== fixedDimensions.height) {
+              } else if (size.height !== fixedDimensions.height) {
                 await editor.threadsafe((editor) =>
                   editor.commands.updateAttachment(fixedDimensions, {
                     query: makeImageQuery(src, hash),
@@ -383,7 +399,6 @@ function getAlignmentStyles(
   const { align, float } = options;
   if (float && align !== "center") {
     return {
-      display: "inline",
       ml: align === "right" ? 2 : 0,
       mr: align === "left" ? 2 : 0,
       float: align,

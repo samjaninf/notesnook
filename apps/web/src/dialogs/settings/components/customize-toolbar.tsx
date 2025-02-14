@@ -46,10 +46,10 @@ import {
 import { useEffect, useState } from "react";
 import { CSS } from "@dnd-kit/utilities";
 import { createPortal } from "react-dom";
-import { getId } from "@notesnook/core/dist/utils/id";
+import { getId } from "@notesnook/core";
 import { Label } from "@theme-ui/components";
 import { db } from "../../../common/db";
-import { useToolbarConfig } from "../../../components/editor/context";
+import { useToolbarConfig } from "../../../components/editor/manager";
 import {
   getAllPresets,
   getCurrentPreset,
@@ -63,6 +63,8 @@ import { isUserPremium } from "../../../hooks/use-is-user-premium";
 import { Pro } from "../../../components/icons";
 
 import { Icon } from "@notesnook/ui";
+import { CURRENT_TOOLBAR_VERSION } from "@notesnook/common";
+import { strings } from "@notesnook/intl";
 
 export function CustomizeToolbar() {
   const sensors = useSensors(
@@ -73,12 +75,11 @@ export function CustomizeToolbar() {
   );
   const [items, setItems] = useState<TreeNode[]>([]);
   const [activeItem, setActiveItem] = useState<TreeNode>();
-  const [currentPreset, setCurrentPreset] = useState<Preset>(
-    getCurrentPreset()
-  );
+  const [currentPreset, setCurrentPreset] = useState<Preset>();
   const { setToolbarConfig } = useToolbarConfig();
 
   useEffect(() => {
+    if (!currentPreset) return;
     const items = flatten(getPresetTools(currentPreset));
     items.push(createTrash());
     items.push(...flatten([getDisabledTools(items)]).slice(1));
@@ -87,9 +88,18 @@ export function CustomizeToolbar() {
 
   useEffect(() => {
     (async () => {
+      const preset = await getCurrentPreset();
+      setCurrentPreset(preset);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!currentPreset) return;
       const tools = unflatten(items).slice(0, -1);
 
-      await db.settings?.setToolbarConfig("desktop", {
+      await db.settings.setToolbarConfig("desktop", {
+        version: CURRENT_TOOLBAR_VERSION,
         preset: currentPreset.id,
         config: currentPreset.id === "custom" ? tools : undefined
       });
@@ -98,6 +108,7 @@ export function CustomizeToolbar() {
     })();
   }, [items]);
 
+  if (!currentPreset) return null;
   return (
     <Flex sx={{ flexDirection: "column" }}>
       <Flex
@@ -108,7 +119,10 @@ export function CustomizeToolbar() {
             <Label
               key={preset.id}
               variant="text.body"
-              sx={{ alignItems: "center", width: "auto" }}
+              sx={{
+                alignItems: "center",
+                width: "auto"
+              }}
             >
               <input
                 id={preset.id.toString()}
@@ -124,15 +138,23 @@ export function CustomizeToolbar() {
                   if (preset.id === "custom" && !isUserPremium()) {
                     showToast(
                       "info",
-                      "You need to be Pro to use the custom preset."
+                      strings.upgradeToProToUseFeature("customPresets")
                     );
                     return;
                   }
-
+                  console.log("CHANGE PRESET", value);
                   setCurrentPreset(getPreset(value as PresetId));
                 }}
               />
-              <span style={{ marginLeft: 5 }}>{preset.title}</span>
+              <span
+                style={{
+                  marginLeft: 5,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }}
+              >
+                {preset.title}
+              </span>
               {preset.id === "custom" && !isUserPremium() ? (
                 <Pro color="accent" size={18} sx={{ ml: 1 }} />
               ) : null}
@@ -148,10 +170,10 @@ export function CustomizeToolbar() {
               alignItems: "center",
               p: 1
             }}
-            title="Add group"
+            title={strings.createAGroup()}
             onClick={() => {
               setItems(addGroup);
-              showToast("success", "Group added successfully");
+              showToast("success", strings.groupAdded());
             }}
           >
             <Icon path={Icons.plus} color="paragraph" size={18} />
@@ -162,17 +184,22 @@ export function CustomizeToolbar() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        onDragStart={(event) => {
+        cancelDrop={() => {
           if (!isUserPremium()) {
-            showToast("info", "You need to be Pro to customize the toolbar.");
-            return;
+            showToast(
+              "error",
+              strings.upgradeToProToUseFeature("customizeToolbar")
+            );
+            return true;
           }
-
+          return false;
+        }}
+        onDragStart={(event) => {
           if (currentPreset.id !== "custom") {
-            setCurrentPreset((c) => ({
+            setCurrentPreset({
               ...getPreset("custom"),
-              tools: getPresetTools(c)
-            }));
+              tools: getPresetTools(currentPreset)
+            });
           }
 
           const { active } = event;
@@ -220,7 +247,7 @@ export function CustomizeToolbar() {
                   canAddSubGroup
                     ? () => {
                         setItems((items) => addSubGroup(items, item.id));
-                        showToast("success", "Subgroup added successfully");
+                        showToast("success", strings.subgroupAdded());
                       }
                     : undefined
                 }
@@ -467,7 +494,7 @@ function createGroup(config: Partial<Group>): Group {
     type: "group",
     id: getId(),
     depth: 0,
-    title: "Group",
+    title: strings.group(),
     ...config
   };
 }
@@ -487,7 +514,7 @@ function createTrash() {
   return createGroup({
     id: "trash",
     depth: 0,
-    title: "Disabled items"
+    title: strings.disabled()
   });
 }
 
@@ -676,7 +703,7 @@ function addSubGroup(items: TreeNode[], groupId: string) {
   newArray.splice(
     group.index + group.items.length,
     0,
-    createGroup({ title: "Subgroup 1", depth: 1 })
+    createGroup({ title: strings.subgroupOne(), depth: 1 })
   );
   return newArray;
 }

@@ -17,23 +17,29 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import { DATE_FORMATS } from "@notesnook/core/dist/common";
+import { DATE_FORMATS } from "@notesnook/core";
 import { SettingsGroup } from "./types";
-import { useStore as useSettingStore } from "../../stores/setting-store";
+import {
+  ImageCompressionOptions,
+  useStore as useSettingStore
+} from "../../stores/setting-store";
 import dayjs from "dayjs";
 import { isUserPremium } from "../../hooks/use-is-user-premium";
+import { TimeFormat } from "@notesnook/core";
+import { TrashCleanupInterval } from "@notesnook/core";
+import { strings } from "@notesnook/intl";
 
 export const BehaviourSettings: SettingsGroup[] = [
   {
     key: "general",
     section: "behaviour",
-    header: "General",
+    header: strings.general(),
     isHidden: () => !isUserPremium(),
     settings: [
       {
         key: "default-homepage",
-        title: "Home page",
-        description: "Default screen to open on app startup.",
+        title: strings.homepage(),
+        description: strings.homepageDesc(),
         keywords: ["welcome page", "default screen"],
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.homepage, listener),
@@ -45,10 +51,41 @@ export const BehaviourSettings: SettingsGroup[] = [
             selectedOption: () =>
               useSettingStore.getState().homepage.toString(),
             options: [
-              { value: "0", title: "Notes" },
-              { value: "1", title: "Notebooks" },
-              { value: "2", title: "Favorites" },
-              { value: "3", title: "Tags" }
+              { value: "0", title: strings.routes.Notes() },
+              { value: "1", title: strings.routes.Notebooks() },
+              { value: "2", title: strings.routes.Favorites() },
+              { value: "3", title: strings.routes.Tags() }
+            ]
+          }
+        ]
+      },
+      {
+        key: "image-compression",
+        title: strings.imageCompression(),
+        description: strings.imageCompressionDesc(),
+        keywords: ["compress images", "image quality"],
+        onStateChange: (listener) =>
+          useSettingStore.subscribe((s) => s.imageCompression, listener),
+        components: [
+          {
+            type: "dropdown",
+            onSelectionChanged: (value) =>
+              useSettingStore.getState().setImageCompression(parseInt(value)),
+            selectedOption: () =>
+              useSettingStore.getState().imageCompression.toString(),
+            options: [
+              {
+                value: ImageCompressionOptions.ASK_EVERY_TIME.toString(),
+                title: strings.askEveryTime()
+              },
+              {
+                value: ImageCompressionOptions.ENABLE.toString(),
+                title: strings.enableRecommended()
+              },
+              {
+                value: ImageCompressionOptions.DISABLE.toString(),
+                title: strings.disable()
+              }
             ]
           }
         ]
@@ -58,12 +95,12 @@ export const BehaviourSettings: SettingsGroup[] = [
   {
     key: "date-time",
     section: "behaviour",
-    header: "Date & time",
+    header: strings.dateAndTime(),
     settings: [
       {
         key: "date-format",
-        title: "Date format",
-        description: "This date format will be used everywhere in the app.",
+        title: strings.dateFormat(),
+        description: strings.dateFormatDesc(),
         keywords: [],
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.dateFormat, listener),
@@ -82,8 +119,8 @@ export const BehaviourSettings: SettingsGroup[] = [
       },
       {
         key: "time-format",
-        title: "Time format",
-        description: "This time format will be used everywhere in the app.",
+        title: strings.timeFormat(),
+        description: strings.timeFormatDesc(),
         keywords: [],
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.timeFormat, listener),
@@ -91,7 +128,7 @@ export const BehaviourSettings: SettingsGroup[] = [
           {
             type: "dropdown",
             onSelectionChanged: (value) =>
-              useSettingStore.getState().setTimeFormat(value),
+              useSettingStore.getState().setTimeFormat(value as TimeFormat),
             selectedOption: () => useSettingStore.getState().timeFormat,
             options: [
               { value: "12-hour", title: "12h" },
@@ -105,13 +142,12 @@ export const BehaviourSettings: SettingsGroup[] = [
   {
     key: "trash",
     section: "behaviour",
-    header: "Trash",
+    header: strings.trash(),
     settings: [
       {
         key: "trash-cleanup-interval",
-        title: "Cleanup interval",
-        description:
-          "All items in the trash will be permanently deleted after this interval.",
+        title: strings.clearTrashInterval(),
+        description: strings.clearTrashIntervalDesc(),
         keywords: ["clear trash", "trash cleanup interval"],
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.trashCleanupInterval, listener),
@@ -121,15 +157,17 @@ export const BehaviourSettings: SettingsGroup[] = [
             onSelectionChanged: (value) =>
               useSettingStore
                 .getState()
-                .setTrashCleanupInterval(parseInt(value)),
+                .setTrashCleanupInterval(
+                  parseInt(value) as TrashCleanupInterval
+                ),
             selectedOption: () =>
               useSettingStore.getState().trashCleanupInterval.toString(),
             options: [
-              { value: "1", title: "Daily" },
-              { value: "7", title: "Weekly" },
-              { value: "30", title: "Monthly" },
-              { value: "365", title: "Yearly" },
-              { value: "-1", title: "Never", premium: true }
+              { value: "1", title: strings.daily() },
+              { value: "7", title: strings.days(7) },
+              { value: "30", title: strings.days(30) },
+              { value: "365", title: strings.days(365) },
+              { value: "-1", title: strings.never(), premium: true }
             ]
           }
         ]
@@ -139,14 +177,13 @@ export const BehaviourSettings: SettingsGroup[] = [
   {
     key: "desktop-app",
     section: "behaviour",
-    header: "Desktop app",
+    header: strings.desktopApp(),
     isHidden: () => !IS_DESKTOP_APP,
     settings: [
       {
         key: "auto-updates",
-        title: "Automatic updates",
-        description:
-          "Automatically download & install updates in the background without prompting first.",
+        title: strings.automaticUpdates(),
+        description: strings.automaticUpdatesDesc(),
         onStateChange: (listener) =>
           useSettingStore.subscribe((s) => s.autoUpdates, listener),
         isHidden: () => useSettingStore.getState().isFlatpak,

@@ -38,13 +38,7 @@ import {
   Reupload,
   Uploading
 } from "../icons";
-import { showToast } from "../../utils/toast";
-import { hashNavigate } from "../../navigation";
-import {
-  closeOpenedDialog,
-  showPromptDialog
-} from "../../common/dialog-controller";
-import { store } from "../../stores/attachment-store";
+import { store, useStore } from "../../stores/attachment-store";
 import { db } from "../../common/db";
 import { saveAttachment } from "../../common/attachments";
 import { reuploadAttachment } from "../editor/picker";
@@ -54,11 +48,17 @@ import {
   DocumentMimeTypes,
   WebClipMimeType,
   PDFMimeType
-} from "@notesnook/core/dist/utils/filename";
-import { useEffect, useState } from "react";
+} from "@notesnook/core";
+import React, { useEffect, useState } from "react";
 import { AppEventManager, AppEvents } from "../../common/app-events";
 import { getFormattedDate } from "@notesnook/common";
 import { MenuItem } from "@notesnook/ui";
+import { Attachment as AttachmentType } from "@notesnook/core";
+import { useEditorStore } from "../../stores/editor-store";
+import { PromptDialog } from "../../dialogs/prompt";
+import { DialogManager } from "../../common/dialog-manager";
+import { useStore as useSelectionStore } from "../../stores/selection-store";
+import { strings } from "@notesnook/intl";
 
 const FILE_ICONS: Record<string, Icon> = {
   "image/": FileImage,
@@ -85,24 +85,29 @@ type AttachmentProgressStatus = {
 };
 
 type AttachmentProps = {
-  attachment: any;
+  item: AttachmentType;
   isSelected?: boolean;
   onSelected?: () => void;
   compact?: boolean;
+  style?: React.CSSProperties;
+  rowRef?: React.Ref<HTMLTableRowElement>;
 };
 export function Attachment({
-  attachment,
+  item,
   isSelected,
   onSelected,
-  compact
+  compact,
+  rowRef,
+  style
 }: AttachmentProps) {
   const [status, setStatus] = useState<AttachmentProgressStatus>();
+  const processing = useStore((store) => store.processing[item.hash]);
 
   useEffect(() => {
     const event = AppEventManager.subscribe(
       AppEvents.UPDATE_ATTACHMENT_PROGRESS,
       (progress: any) => {
-        if (progress.hash === attachment.metadata.hash) {
+        if (progress.hash === item.hash) {
           const percent = Math.round((progress.loaded / progress.total) * 100);
           setStatus(
             percent < 100
@@ -119,18 +124,28 @@ export function Attachment({
     return () => {
       event.unsubscribe();
     };
-  }, [attachment.metadata.hash]);
+  }, [item.hash]);
 
-  const FileIcon = getFileIcon(attachment.metadata.type);
+  const FileIcon = getFileIcon(item.type);
   return (
     <Box
       as="tr"
       sx={{ height: 30, ":hover": { bg: "hover" } }}
       onContextMenu={(e) => {
         e.preventDefault();
-        Menu.openMenu(AttachmentMenuItems(attachment, status));
+        e.stopPropagation();
+        Menu.openMenu(AttachmentMenuItems(item, status));
       }}
       onClick={onSelected}
+      onKeyPress={async (e) => {
+        if (e.key === "Delete") {
+          await Multiselect.deleteAttachments(
+            useSelectionStore.getState().selectedItems
+          );
+        }
+      }}
+      style={style}
+      ref={rowRef}
     >
       {!compact && (
         <td>
@@ -150,8 +165,7 @@ export function Attachment({
       <td>
         <Flex
           sx={{
-            alignItems: "center",
-            maxWidth: compact ? 180 : "95%"
+            alignItems: "center"
           }}
         >
           {status ? (
@@ -160,17 +174,13 @@ export function Attachment({
             ) : (
               <Uploading size={16} color="accent" />
             )
-          ) : attachment.failed ? (
+          ) : processing?.failed || item.failed ? (
             <AttachmentError
               color={"icon-error"}
               size={16}
-              title={
-                typeof attachment.failed === "object"
-                  ? attachment.failed.toString()
-                  : attachment.failed
-              }
+              title={processing?.failed || item.failed}
             />
-          ) : attachment.working ? (
+          ) : processing?.working ? (
             <Loading size={16} />
           ) : (
             <FileIcon size={16} />
@@ -184,45 +194,48 @@ export function Attachment({
               textOverflow: "ellipsis"
             }}
           >
-            {attachment.metadata.filename}
+            {item.filename}
           </Text>
         </Flex>
       </td>
       <Text as="td" variant="body">
-        {attachment.isDeleting ? (
-          <Loading sx={{ flexShrink: 0 }} size={16} title={"Deleting.."} />
-        ) : attachment.dateUploaded ? (
+        {item.dateUploaded ? (
           <DoubleCheckmark
             sx={{ flexShrink: 0 }}
             color={"accent"}
             size={16}
-            title={"Uploaded"}
+            title={strings.uploaded()}
           />
         ) : (
           <Checkmark
             sx={{ flexShrink: 0 }}
             size={16}
-            title={"Waiting for upload"}
+            title={strings.waitingForUpload()}
           />
         )}
       </Text>
       <Text
         as="td"
         variant="body"
-        sx={{ color: status ? "accent" : "paragraph" }}
+        sx={{
+          color: status ? "accent" : "paragraph",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis"
+        }}
       >
         {status ? (
           <>
             {formatBytes(status.loaded, 1)}/{formatBytes(status.total, 1)}
           </>
         ) : (
-          formatBytes(attachment.length, compact ? 1 : 2)
+          formatBytes(item.size, compact ? 1 : 2)
         )}
       </Text>
       {!compact && (
         <Text as="td" variant="body">
-          {attachment.dateUploaded
-            ? getFormattedDate(attachment.dateUploaded, "date")
+          {item.dateUploaded
+            ? getFormattedDate(item.dateUploaded, "date")
             : "-"}
         </Text>
       )}
@@ -231,99 +244,110 @@ export function Attachment({
 }
 
 const AttachmentMenuItems: (
-  attachment: any,
+  attachment: AttachmentType,
   status?: AttachmentProgressStatus
 ) => MenuItem[] = (attachment, status) => {
   return [
     {
-      type: "button",
       key: "notes",
-      title: "Notes",
+      type: "button",
+      title: strings.linkedNotes(),
       icon: References.path,
       menu: {
-        items: (attachment.noteIds as string[]).reduce((prev, curr) => {
-          const note = db.notes?.note(curr);
-          if (!note)
-            prev.push({
-              type: "button",
-              key: curr,
-              title: `Note with id ${curr}`,
-              onClick: () => showToast("error", "This note does not exist.")
-            });
-          else
-            prev.push({
-              type: "button",
-              key: note.id,
-              title: note.title,
-              onClick: () => {
-                hashNavigate(`/notes/${curr}/edit`);
-                closeOpenedDialog();
+        items: [
+          {
+            type: "lazy-loader",
+            key: "linked-notes",
+            async items() {
+              const menuItems: MenuItem[] = [];
+              for (const note of await db.relations
+                .to(attachment, "note")
+                .selector.fields(["notes.id", "notes.title"])
+                .items()) {
+                menuItems.push({
+                  type: "button",
+                  key: note.id,
+                  title: note.title,
+                  onClick: () => {
+                    useEditorStore.getState().openSession(note.id);
+                    DialogManager.closeAll();
+                  }
+                });
               }
-            });
-          return prev;
-        }, [] as MenuItem[])
+              if (menuItems.length <= 0)
+                menuItems.push({
+                  type: "button",
+                  key: "no-linked-note",
+                  title: strings.noLinkedNotes()
+                });
+              return menuItems;
+            }
+          }
+        ]
       }
     },
     {
       type: "button",
       key: "recheck",
-      title: "Recheck",
+      title: strings.fileCheck(),
       icon: DoubleCheckmark.path,
       isDisabled: !attachment.dateUploaded,
       onClick: async () => {
-        await store.recheck([attachment.metadata.hash]);
+        await store.recheck([attachment.id]);
       }
     },
     {
       type: "button",
       key: "rename",
-      title: "Rename",
+      title: strings.rename(),
       icon: Rename.path,
       onClick: async () => {
-        const newName = await showPromptDialog({
-          title: "Rename attachment",
-          description: attachment.metadata.filename,
-          defaultValue: attachment.metadata.filename
+        const newName = await PromptDialog.show({
+          title: strings.doActions.rename.attachment(1),
+          description: attachment.filename,
+          defaultValue: attachment.filename
         });
         if (!newName) return;
-        await store.rename(attachment.metadata.hash, newName);
+        await store.rename(attachment.hash, newName);
       }
     },
     {
       type: "button",
       key: "download",
-      title: status?.type === "download" ? "Cancel download" : "Download",
+      title:
+        status?.type === "download"
+          ? strings.network.cancelDownload()
+          : strings.network.download(),
       icon: Download.path,
       onClick: async () => {
         const isDownloading = status?.type === "download";
         if (isDownloading) {
-          await db.fs?.cancel(attachment.metadata.hash, "download");
-        } else await saveAttachment(attachment.metadata.hash);
+          await db.fs().cancel(attachment.hash);
+        } else await saveAttachment(attachment.hash);
       }
     },
     {
       type: "button",
       key: "reupload",
-      title: status?.type === "upload" ? "Cancel upload" : "Reupload",
+      title:
+        status?.type === "upload"
+          ? strings.network.cancelUpload()
+          : strings.network.reupload(),
       icon: Reupload.path,
       onClick: async () => {
         const isDownloading = status?.type === "upload";
         if (isDownloading) {
-          await db.fs?.cancel(attachment.metadata.hash, "upload");
-        } else
-          await reuploadAttachment(
-            attachment.metadata.type,
-            attachment.metadata.hash
-          );
+          await db.fs().cancel(attachment.hash);
+        } else await reuploadAttachment(attachment.type, attachment.hash);
       }
     },
     {
       type: "button",
       key: "permanent-delete",
       variant: "dangerous",
-      title: "Delete permanently",
+      title: strings.deletePermanently(),
       icon: DeleteForver.path,
-      onClick: () => Multiselect.deleteAttachments([attachment])
+      onClick: () => Multiselect.deleteAttachments([attachment.id])
     }
   ];
 };

@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { initTRPC } from "@trpc/server";
 import { z } from "zod";
-import { dialog, nativeTheme, Notification, shell } from "electron";
+import { app, dialog, nativeTheme, Notification, shell } from "electron";
 import { AutoLaunch } from "../utils/autolaunch";
 import { config, DesktopIntegration } from "../utils/config";
 import { bringToFront } from "../utils/bring-to-front";
@@ -31,6 +31,8 @@ import { observable } from "@trpc/server/observable";
 import { AssetManager } from "../utils/asset-manager";
 import { isFlatpak } from "../utils";
 import { setupDesktopIntegration } from "../utils/desktop-integration";
+import { rm } from "fs/promises";
+import { disableCustomDns, enableCustomDns } from "../utils/custom-dns";
 
 const t = initTRPC.create();
 
@@ -53,6 +55,23 @@ export const osIntegrationRouter = t.router({
     globalThis.window?.webContents.setZoomFactor(factor);
     config.zoomFactor = factor;
   }),
+
+  customDns: t.procedure.query(() => config.customDns),
+  setCustomDns: t.procedure
+    .input(z.boolean().optional())
+    .mutation(({ input: customDns }) => {
+      if (customDns) enableCustomDns();
+      else disableCustomDns();
+      config.customDns = !!customDns;
+    }),
+
+  proxyRules: t.procedure.query(() => config.proxyRules),
+  setProxyRules: t.procedure
+    .input(z.string().optional())
+    .mutation(({ input: proxyRules }) => {
+      globalThis.window?.webContents.session.setProxy({ proxyRules });
+      config.proxyRules = proxyRules || "";
+    }),
 
   privacyMode: t.procedure.query(() => config.privacyMode),
   setPrivacyMode: t.procedure
@@ -126,10 +145,17 @@ export const osIntegrationRouter = t.router({
     .input(z.object({ filePath: z.string() }))
     .query(({ input }) => {
       const { filePath } = input;
-      if (!filePath) return;
       return resolvePath(filePath);
     }),
 
+  deleteFile: t.procedure.input(z.string()).query(async ({ input }) => {
+    await rm(input);
+  }),
+
+  restart: t.procedure.query(() => {
+    app.relaunch();
+    app.exit();
+  }),
   showNotification: t.procedure
     .input(NotificationOptions)
     .query(({ input }) => {
@@ -158,16 +184,45 @@ export const osIntegrationRouter = t.router({
     }),
   bringToFront: t.procedure.query(() => bringToFront()),
   changeTheme: t.procedure
-    .input(Theme)
-    .mutation(({ input }) => setTheme(input)),
+    .input(
+      z.object({
+        theme: Theme,
+        windowControlsIconColor: z.string().optional(),
+        backgroundColor: z.string().optional()
+      })
+    )
+    .mutation(
+      ({ input: { theme, windowControlsIconColor, backgroundColor } }) => {
+        if (windowControlsIconColor) {
+          config.windowControlsIconColor = windowControlsIconColor;
+          if (
+            process.platform === "win32" &&
+            !config.desktopSettings.nativeTitlebar
+          )
+            globalThis.window?.setTitleBarOverlay({
+              symbolColor: windowControlsIconColor
+            });
+        }
+
+        if (backgroundColor) {
+          config.backgroundColor = backgroundColor;
+        }
+
+        setTheme(theme);
+      }
+    ),
 
   onThemeChanged: t.procedure.subscription(() =>
     observable<"dark" | "light">((emit) => {
-      nativeTheme.on("updated", () => {
+      const updated = () => {
         if (getTheme() === "system") {
           emit.next(nativeTheme.shouldUseDarkColors ? "dark" : "light");
         }
-      });
+      };
+      nativeTheme.on("updated", updated);
+      return () => {
+        nativeTheme.off("updated", updated);
+      };
     })
   )
 });

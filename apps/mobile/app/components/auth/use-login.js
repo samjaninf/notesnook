@@ -19,13 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { useRef, useState } from "react";
 import { db } from "../../common/database";
-import { eSendEvent, ToastEvent } from "../../services/event-manager";
+import { eSendEvent, ToastManager } from "../../services/event-manager";
 import { clearMessage } from "../../services/message";
 import PremiumService from "../../services/premium";
 import SettingsService from "../../services/settings";
 import { useUserStore } from "../../stores/use-user-store";
 import { eCloseSheet } from "../../utils/events";
 import TwoFactorVerification from "./two-factor";
+import { strings } from "@notesnook/intl";
 
 export const LoginSteps = {
   emailAuth: 1,
@@ -48,9 +49,9 @@ export const useLogin = (onFinishLogin, sessionExpired = false) => {
       (!password.current && step === LoginSteps.passwordAuth) ||
       (!email.current && step === LoginSteps.emailAuth)
     ) {
-      ToastEvent.show({
-        heading: "All fields required",
-        message: "Fill all the fields and try again",
+      ToastManager.show({
+        heading: strings.allFieldsRequired(),
+        message: strings.allFieldsRequiredDesc(),
         type: "error",
         context: "local"
       });
@@ -69,35 +70,43 @@ export const useLogin = (onFinishLogin, sessionExpired = false) => {
       switch (step) {
         case LoginSteps.emailAuth: {
           const mfaInfo = await db.user.authenticateEmail(email.current);
-          console.log("email auth", mfaInfo);
-          if (mfaInfo) {
-            TwoFactorVerification.present(async (mfa, callback) => {
-              try {
-                const success = await db.user.authenticateMultiFactorCode(
-                  mfa.code,
-                  mfa.method
-                );
 
-                if (success) {
-                  setStep(LoginSteps.passwordAuth);
-                  setLoading(false);
-                  setTimeout(() => {
-                    passwordInputRef.current?.focus();
-                  }, 1);
-                  callback && callback(true);
+          if (mfaInfo) {
+            TwoFactorVerification.present(
+              async (mfa, callback) => {
+                try {
+                  const success = await db.user.authenticateMultiFactorCode(
+                    mfa.code,
+                    mfa.method
+                  );
+
+                  if (success) {
+                    setStep(LoginSteps.passwordAuth);
+                    setLoading(false);
+                    setTimeout(() => {
+                      passwordInputRef.current?.focus();
+                    }, 500);
+                    callback && callback(true);
+                  }
+                  callback && callback(false);
+                } catch (e) {
+                  callback && callback(false);
+                  if (e.message === "invalid_grant") {
+                    eSendEvent(eCloseSheet, "two_factor_verify");
+                    setLoading(false);
+                    setStep(LoginSteps.emailAuth);
+                  }
                 }
-                callback && callback(false);
-              } catch (e) {
-                callback && callback(false);
-                if (e.message === "invalid_grant") {
-                  eSendEvent(eCloseSheet, "two_factor_verify");
-                  setLoading(false);
-                  setStep(LoginSteps.emailAuth);
-                }
+              },
+              mfaInfo,
+              () => {
+                eSendEvent(eCloseSheet, "two_factor_verify");
+                setLoading(false);
+                setStep(LoginSteps.emailAuth);
               }
-            }, mfaInfo);
+            );
           } else {
-            finishWithError(new Error("Unable to send 2FA code"));
+            finishWithError(new Error(strings.unableToSend2faCode()));
           }
           break;
         }
@@ -121,8 +130,8 @@ export const useLogin = (onFinishLogin, sessionExpired = false) => {
   const finishWithError = async (e) => {
     if (e.message === "invalid_grant") setStep(LoginSteps.emailAuth);
     setLoading(false);
-    ToastEvent.show({
-      heading: "Login failed",
+    ToastManager.show({
+      heading: strings.loginFailed(),
       message: e.message,
       type: "error",
       context: "local"
@@ -131,13 +140,13 @@ export const useLogin = (onFinishLogin, sessionExpired = false) => {
 
   const finishLogin = async () => {
     const user = await db.user.getUser();
-    if (!user) throw new Error("Email or password incorrect!");
+    if (!user) throw new Error(strings.emailOrPasswordIncorrect());
     PremiumService.setPremiumStatus();
     setUser(user);
     clearMessage();
-    ToastEvent.show({
-      heading: "Login successful",
-      message: `Logged in as ${user.email}`,
+    ToastManager.show({
+      heading: strings.loginSuccess(),
+      message: strings.loginSuccessDesc(),
       type: "success",
       context: "global"
     });

@@ -20,34 +20,74 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { EventSourcePolyfill as EventSource } from "event-source-polyfill";
 import { DatabasePersistence, NNStorage } from "../interfaces/storage";
 import { logger } from "../utils/logger";
-import type Database from "@notesnook/core/dist/api";
-import { showMigrationDialog } from "./dialog-controller";
+import { database } from "@notesnook/common";
+import { createDialect } from "./sqlite";
+import { isFeatureSupported } from "../utils/feature-check";
+import { generatePassword } from "../utils/password-generator";
+import { deriveKey, useKeyStore } from "../interfaces/key-store";
+import { logManager } from "@notesnook/core";
+import Config from "../utils/config";
+import { FileStorage } from "../interfaces/fs";
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-let db: Database = {};
+const db = database;
 async function initializeDatabase(persistence: DatabasePersistence) {
-  logger.measure("Database initialization");
+  performance.mark("start:initializeDatabase");
 
-  const { database } = await import("@notesnook/common");
-  const { default: FS } = await import("../interfaces/fs");
-  const { Compressor } = await import("../utils/compressor");
-  db = database;
+  let databaseKey = await useKeyStore.getState().getValue("databaseKey");
+  if (!databaseKey) {
+    databaseKey = await deriveKey(generatePassword());
+    await useKeyStore.getState().setValue("databaseKey", databaseKey);
+  }
 
   db.host({
     API_HOST: "https://api.notesnook.com",
     AUTH_HOST: "https://auth.streetwriters.co",
     SSE_HOST: "https://events.streetwriters.co",
     ISSUES_HOST: "https://issues.streetwriters.co",
-    SUBSCRIPTIONS_HOST: "https://subscriptions.streetwriters.co"
+    MONOGRAPH_HOST: "https://monogr.ph",
+    SUBSCRIPTIONS_HOST: "https://subscriptions.streetwriters.co",
+    ...Config.get("serverUrls", {})
   });
 
-  database.setup(
-    await NNStorage.createInstance("Notesnook", persistence),
-    EventSource,
-    FS,
-    new Compressor()
+  const storage = new NNStorage(
+    "Notesnook",
+    () => useKeyStore.getState(),
+    persistence
   );
+  await storage.migrate();
+
+  const multiTab = !!globalThis.SharedWorker && isFeatureSupported("opfs");
+  database.setup({
+    sqliteOptions: {
+      dialect: (name, init) =>
+        createDialect({
+          name: persistence === "memory" ? ":memory:" : name,
+          encrypted: true,
+          async: !isFeatureSupported("opfs"),
+          init,
+          multiTab
+        }),
+      ...(IS_DESKTOP_APP || isFeatureSupported("opfs")
+        ? { journalMode: "WAL", lockingMode: "exclusive" }
+        : {
+            journalMode: "MEMORY",
+            lockingMode: "normal"
+          }),
+      tempStore: "memory",
+      synchronous: "normal",
+      pageSize: 8192,
+      cacheSize: -32000,
+      password: Buffer.from(databaseKey).toString("hex"),
+      skipInitialization: !IS_DESKTOP_APP && multiTab
+    },
+    storage: storage,
+    eventsource: EventSource,
+    fs: FileStorage,
+    compressor: () =>
+      import("../utils/compressor").then(({ Compressor }) => new Compressor()),
+    batchSize: 100
+  });
+
   // if (IS_TESTING) {
 
   // } else {
@@ -66,14 +106,24 @@ async function initializeDatabase(persistence: DatabasePersistence) {
   // });
   // }
 
+  performance.mark("start:initdb");
   await db.init();
+  performance.mark("end:initdb");
 
-  logger.measure("Database initialization");
+  window.addEventListener("beforeunload", async () => {
+    if (IS_DESKTOP_APP) {
+      await db.sql().destroy();
+      await logManager?.close();
+    }
+  });
 
   if (db.migrations?.required()) {
-    await showMigrationDialog();
+    await import("../dialogs/migration-dialog").then(({ MigrationDialog }) =>
+      MigrationDialog.show({})
+    );
   }
 
+  performance.mark("end:initializeDatabase");
   return db;
 }
 

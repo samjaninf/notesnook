@@ -2,6 +2,9 @@
 const path = require("path");
 const TerserPlugin = require("terser-webpack-plugin");
 const Repack = require("@callstack/repack");
+const { webpack, NormalModuleReplacementPlugin } = require("webpack");
+
+
 
 /**
  * More documentation, installation, usage, motivation and differences with Metro is available at:
@@ -23,7 +26,7 @@ module.exports = (env) => {
     mode = "development",
     context = __dirname,
     entry = "./index.js",
-    platform,
+    platform = process.env.PLATFORM,
     minimize = mode === "production",
     devServer = undefined,
     bundleFilename = undefined,
@@ -100,7 +103,12 @@ module.exports = (env) => {
         "react-native-blob-util": path.join(__dirname, "../node_modules/react-native-blob-util"),
         "@mdi/js": path.join(__dirname, "../node_modules/@mdi/js/mdi.js"),
         "katex": path.join(__dirname, "../node_modules/katex"),
+        "tinycolor2":  path.join(__dirname, "../node_modules/tinycolor2"),
+        "@lingui/core": path.join(__dirname, "../node_modules/@lingui/core"),
       },
+      fallback: {
+        "crypto": false,
+      }
     },
     /**
      * Configures output.
@@ -111,7 +119,8 @@ module.exports = (env) => {
      */
     output: {
       clean: true,
-      path: path.join(__dirname, "build/generated", platform),
+      hashFunction: 'xxhash64',
+      path: path.join(__dirname, 'build/generated', platform),
       filename: "index.bundle",
       chunkFilename: "[name].chunk.bundle",
       publicPath: Repack.getPublicPath({ platform, devServer }),
@@ -154,7 +163,30 @@ module.exports = (env) => {
         {
           test: /\.mjs$|cjs$|js$|jsx$|ts$|tsx$/,
           include: [
-            /node_modules(.*[/\\])+react/,
+            /node_modules(.*[/\\])+@streetwriters\/kysely/,
+          ],
+          use: {
+            loader: "babel-loader",
+            options: {
+              configFile: false,
+              cacheDirectory: path.join(
+                __dirname,
+                "node_modules/.webpack-cache"
+              ),
+              babelrc: false,
+              presets: ["module:@react-native/babel-preset"],
+              plugins: [
+                "react-native-reanimated/plugin",
+                "@babel/plugin-transform-named-capturing-groups-regex",
+                ["@babel/plugin-transform-private-methods", { "loose": true }],
+              ]
+            },
+          },
+        },
+        {
+          test: /\.mjs$|cjs$|js$|jsx$|ts$|tsx$/,
+          include: [
+            /node_modules(.*[/\\])+react-native/,
             /node_modules(.*[/\\])+@react-native/,
             /node_modules(.*[/\\])+@react-navigation/,
             /node_modules(.*[/\\])+@react-native-community/,
@@ -185,8 +217,15 @@ module.exports = (env) => {
             /node_modules(.*[/\\])+@tanstack[/\\]react-query/,
             /node_modules(.*[/\\])+@trpc[/\\]react-query/,
             /node_modules(.*[/\\])+katex/,
+            /node_modules(.*[/\\])+react-native-material-menu/,
             /node_modules(.*[/\\])+@notesnook[/\\]core/,
-
+            /node_modules(.*[/\\])+whatwg-url-without-unicode/,
+            /node_modules(.*[/\\])+whatwg-url/,
+            /node_modules(.*[/\\])+react-native-url-polyfill/,
+            /node_modules(.*[/\\])+diffblazer/,
+            /node_modules(.*[/\\])+react-freeze/,
+            /node_modules(.*[/\\])+@messageformat[/\\]parser/,
+            /node_modules(.*[/\\])+@lingui[/\\]core/,
           ],
           use: {
             loader: "babel-loader",
@@ -197,14 +236,17 @@ module.exports = (env) => {
                 "node_modules/.webpack-cache"
               ),
               babelrc: false,
-              presets: ["module:metro-react-native-babel-preset"],
+              presets: ["module:@react-native/babel-preset"],
               plugins: [
                 "react-native-reanimated/plugin",
                 "@babel/plugin-transform-named-capturing-groups-regex",
-              ],
+                "macros",
+                ["@babel/plugin-transform-private-methods", { "loose": true }],
+              ]
             },
           },
         },
+      
         /**
          * Here you can adjust loader that will process your files.
          *
@@ -224,21 +266,24 @@ module.exports = (env) => {
                 "node_modules/.webpack-cache"
               ),
               babelrc: false,
-              presets: [["module:metro-react-native-babel-preset"]],
+              presets: [["module:@react-native/babel-preset"]],
               plugins:
                 devServer && devServer.hmr
                   ? [
                       "module:react-refresh/babel",
                       "react-native-reanimated/plugin",
+                      "macros"
                     ]
                   : [
                       "react-native-reanimated/plugin",
                       `@babel/plugin-transform-named-capturing-groups-regex`,
                       "transform-remove-console",
+                      "macros"
                     ],
             },
           },
         },
+
         /**
          * This loader handles all static assets (images, video, audio and others), so that you can
          * use (reference) them inside your application.
@@ -282,6 +327,12 @@ module.exports = (env) => {
       ],
     },
     plugins: [
+      new NormalModuleReplacementPlugin(
+        /node:crypto/,
+        (resource) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        }
+      ),
       /**
        * Configure other required and additional plugins to make the bundle
        * work in React Native and provide good development experience with

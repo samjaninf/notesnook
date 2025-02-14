@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { useRef } from "react";
 import { Flex, Text, Button } from "@theme-ui/components";
-import { Icon } from "../icon";
-import { MenuButtonItem, MenuItemComponentProps } from "./types";
+import { Icon } from "../icon/index.js";
+import { MenuButtonItem, MenuItemComponentProps } from "./types.js";
 import { mdiCheck, mdiChevronRight } from "@mdi/js";
 
 type MenuButtonProps = {
@@ -54,7 +54,7 @@ export function MenuButton(props: MenuButtonProps) {
       onMouseLeave={onMouseLeave}
     >
       <Button
-        id={`${key}-menu-item`}
+        id={`menu-item-${key}`}
         data-test-id={`menu-button-${key}`}
         key={key}
         ref={itemRef}
@@ -138,8 +138,8 @@ export function MenuButton(props: MenuButtonProps) {
   );
 }
 
-const platform = getPlatform();
 function translateModifier(modifier: string) {
+  const platform = getPlatform();
   if (platform === "Android" || platform === "iOS") return "";
   const isMacOS = platform === "macOS";
   const parts = modifier.split("-");

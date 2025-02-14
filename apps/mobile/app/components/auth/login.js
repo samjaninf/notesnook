@@ -17,12 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import { useThemeColors } from "@notesnook/theme";
 import React, { useEffect, useState } from "react";
 import { TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { SheetManager } from "react-native-actions-sheet";
 import { DDS } from "../../services/device-detection";
 import { eSendEvent } from "../../services/event-manager";
-import { useThemeColors } from "@notesnook/theme";
+import Sync from "../../services/sync";
+import { useSettingStore } from "../../stores/use-setting-store";
+import { useUserStore } from "../../stores/use-user-store";
+import { eUserLoggedIn } from "../../utils/events";
 import { SIZE } from "../../utils/size";
 import { sleep } from "../../utils/time";
 import SheetProvider from "../sheet-provider";
@@ -34,10 +38,7 @@ import Paragraph from "../ui/typography/paragraph";
 import { hideAuth } from "./common";
 import { ForgotPassword } from "./forgot-password";
 import { useLogin } from "./use-login";
-import { useSettingStore } from "../../stores/use-setting-store";
-import { eUserLoggedIn } from "../../utils/events";
-import { useUserStore } from "../../stores/use-user-store";
-import Sync from "../../services/sync";
+import { strings } from "@notesnook/intl";
 
 const LoginSteps = {
   emailAuth: 1,
@@ -66,7 +67,7 @@ export const Login = ({ changeMode }) => {
     Progress.present();
     setTimeout(() => {
       if (!useUserStore.getState().syncing) {
-        Sync.run("global", false, true);
+        Sync.run("global", false, "full");
       }
     }, 5000);
   });
@@ -103,7 +104,7 @@ export const Login = ({ changeMode }) => {
             justifyContent: "flex-end",
             paddingHorizontal: 20,
             backgroundColor: colors.secondary.background,
-            borderBottomWidth: 1,
+            borderBottomWidth: 0.8,
             marginBottom: 12,
             borderBottomColor: colors.primary.border,
             alignSelf: deviceMode !== "mobile" ? "center" : undefined,
@@ -147,7 +148,7 @@ export const Login = ({ changeMode }) => {
             extraBold
             size={SIZE.xxl}
           >
-            Login to your {"\n"}account
+            {strings.loginToYourAccount()}
           </Heading>
         </View>
 
@@ -178,12 +179,16 @@ export const Login = ({ changeMode }) => {
             validationType="email"
             autoCorrect={false}
             autoCapitalize="none"
-            errorMessage="Email is invalid"
-            placeholder="Enter your email"
+            errorMessage={strings.emailInvalid()}
+            placeholder={strings.email()}
             defaultValue={email.current}
             editable={step === LoginSteps.emailAuth && !loading}
             onSubmit={() => {
-              passwordInputRef.current?.focus();
+              if (step === LoginSteps.emailAuth) {
+                login();
+              } else {
+                passwordInputRef.current?.focus();
+              }
             }}
           />
 
@@ -195,20 +200,20 @@ export const Login = ({ changeMode }) => {
                   password.current = value;
                 }}
                 testID="input.password"
-                returnKeyLabel="Done"
+                returnKeyLabel={strings.done()}
                 returnKeyType="done"
                 secureTextEntry
                 autoComplete="password"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Password"
+                placeholder={strings.password()}
                 marginBottom={0}
                 editable={!loading}
                 defaultValue={password.current}
                 onSubmit={() => login()}
               />
               <Button
-                title="Forgot your password?"
+                title={strings.forgotPassword()}
                 style={{
                   alignSelf: "flex-end",
                   height: 30,
@@ -222,7 +227,7 @@ export const Login = ({ changeMode }) => {
                   textDecorationLine: "underline"
                 }}
                 fontSize={SIZE.xs}
-                type="gray"
+                type="plain"
               />
             </>
           )}
@@ -242,14 +247,15 @@ export const Login = ({ changeMode }) => {
                 width: 250,
                 borderRadius: 100
               }}
+              height={50}
               fontSize={SIZE.md}
               type="accent"
-              title={!loading ? "Continue" : null}
+              title={!loading ? strings.continue() : null}
             />
 
             {step === LoginSteps.passwordAuth && (
               <Button
-                title="Cancel logging in"
+                title={strings.cancelLogin()}
                 style={{
                   alignSelf: "center",
                   height: 30,
@@ -285,12 +291,12 @@ export const Login = ({ changeMode }) => {
                   size={SIZE.xs + 1}
                   color={colors.secondary.paragraph}
                 >
-                  Don't have an account?{" "}
+                  {strings.dontHaveAccount()}{" "}
                   <Paragraph
                     size={SIZE.xs + 1}
                     style={{ color: colors.primary.accent }}
                   >
-                    Sign up
+                    {strings.signUp()}
                   </Paragraph>
                 </Paragraph>
               </TouchableOpacity>

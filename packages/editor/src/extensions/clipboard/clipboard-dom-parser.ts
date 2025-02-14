@@ -23,7 +23,8 @@ import {
 } from "@tiptap/pm/model";
 import { encodeNonAsciiHTML } from "entities";
 import { Schema, Slice } from "prosemirror-model";
-import { inferLanguage } from "../code-block";
+import { inferLanguage } from "../code-block/index.js";
+import { hasPermission } from "../../types.js";
 
 export class ClipboardDOMParser extends ProsemirrorDOMParser {
   static fromSchema(schema: Schema): ClipboardDOMParser {
@@ -38,10 +39,19 @@ export class ClipboardDOMParser extends ProsemirrorDOMParser {
 
   parseSlice(dom: Node, options?: ParseOptions | undefined): Slice {
     if (dom instanceof HTMLElement || dom instanceof Document) {
+      convertGoogleDocsChecklist(dom);
       formatCodeblocks(dom);
       convertBrToSingleSpacedParagraphs(dom);
+      removeImages(dom);
+      removeBlockId(dom);
     }
     return super.parseSlice(dom, options);
+  }
+}
+
+export function removeBlockId(dom: HTMLElement | Document) {
+  for (const element of dom.querySelectorAll("[data-block-id]")) {
+    element.removeAttribute("data-block-id");
   }
 }
 
@@ -75,35 +85,69 @@ export function convertBrToSingleSpacedParagraphs(dom: HTMLElement | Document) {
   for (const br of dom.querySelectorAll("br")) {
     let paragraph = br.closest("p");
 
-    // if no paragraph is found over the br, we add one.
-    if (!paragraph && br.parentElement) {
-      const parent = br.parentElement;
-      const p = document.createElement("p");
-      p.append(...parent.childNodes);
-      parent.append(p);
-      paragraph = p;
+    if (!paragraph) {
+      // we split and wrap all text nodes into their own single spaced
+      // paragraphs
+      const nodes = getSiblingTextNodes(br);
+      if (nodes.length > 0) {
+        paragraph = document.createElement("p");
+        paragraph.dataset.spacing = "single";
+        paragraph.append(...nodes);
+        br.replaceWith(paragraph);
+        continue;
+      }
+
+      // we convert the next pargraph into a single spaced paragraph
+      if (br.nextElementSibling instanceof HTMLParagraphElement) {
+        br.nextElementSibling.dataset.spacing = "single";
+      }
+
+      // just convert all br tags into single spaced paragraphs
+      const newParagraph = document.createElement("p");
+      newParagraph.dataset.spacing = "single";
+      br.replaceWith(newParagraph);
     }
 
-    // if paragraph is empty, we clean out the paragraph and move on.
     if (
       paragraph &&
       (paragraph.childNodes.length === 1 ||
         !paragraph.textContent ||
         paragraph.textContent.trim().length === 0)
     ) {
+      // if paragraph is empty, we clean out the paragraph and move on.
       paragraph.innerHTML = "";
       continue;
     }
 
     if (paragraph) {
       splitOn(paragraph, br);
-      const children = Array.from(paragraph.childNodes.values());
+      const children = Array.from(paragraph.childNodes);
       const newParagraph = document.createElement("p");
       newParagraph.dataset.spacing = "single";
       newParagraph.append(...children.slice(children.indexOf(br) + 1));
       paragraph.insertAdjacentElement("afterend", newParagraph);
       br.remove();
     }
+  }
+}
+
+export function convertGoogleDocsChecklist(dom: HTMLElement | Document) {
+  for (const li of dom.querySelectorAll(`ul li[role="checkbox"]`)) {
+    if (!li.parentElement?.classList.contains("checklist"))
+      li.parentElement!.classList.add("checklist");
+    li.className = "checklist--item";
+    if (li.firstElementChild?.tagName === "IMG") li.firstElementChild.remove();
+    if (li.getAttribute("aria-checked") === "true") {
+      li.classList.add("checked");
+    }
+  }
+}
+
+export function removeImages(dom: HTMLElement | Document) {
+  let canInsertImages: boolean | null = null;
+  for (const img of dom.querySelectorAll(`img`)) {
+    canInsertImages = canInsertImages ?? hasPermission("insertImage");
+    if (!canInsertImages) img.remove();
   }
 }
 
@@ -122,4 +166,51 @@ function splitOn(bound: Element, cutElement: Element) {
       grandparent?.insertBefore(cutElement, right);
     }
   }
+}
+
+const inlineTags = new Set([
+  "A",
+  "ABBR",
+  "B",
+  "BDI",
+  "BDO",
+  // "BR",
+  "CITE",
+  "CODE",
+  "DATA",
+  "DFN",
+  "EM",
+  "I",
+  // "IMG",
+  // "INPUT",
+  "KBD",
+  "LABEL",
+  "MARK",
+  "Q",
+  "S",
+  "SAMP",
+  "SMALL",
+  "SPAN",
+  "STRONG",
+  "SUB",
+  "SUP",
+  "TEXTAREA",
+  "TIME",
+  "U",
+  "VAR",
+  "WBR"
+]);
+
+function getSiblingTextNodes(element: ChildNode) {
+  const siblings = [];
+  let sibling: ChildNode | null = element;
+  while ((sibling = sibling.previousSibling)) {
+    if (isElement(sibling) && !inlineTags.has(sibling.tagName)) break;
+    else siblings.push(sibling);
+  }
+  return siblings;
+}
+
+function isElement(node: ChildNode): node is HTMLElement {
+  return node.nodeType === Node.ELEMENT_NODE;
 }

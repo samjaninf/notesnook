@@ -19,14 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import { mergeAttributes, wrappingInputRule } from "@tiptap/core";
 import { TaskList } from "@tiptap/extension-task-list";
-import { createNodeView } from "../react";
-import { TaskListComponent } from "./component";
-import {
-  Plugin,
-  PluginKey,
-  NodeSelection,
-  Transaction
-} from "prosemirror-state";
+import { createNodeView } from "../react/index.js";
+import { TaskListComponent } from "./component.js";
+import { Plugin, PluginKey, NodeSelection } from "prosemirror-state";
 import { inputRegex } from "@tiptap/extension-task-item";
 import { dropPoint } from "prosemirror-transform";
 import {
@@ -36,10 +31,15 @@ import {
   hasSameAttributes,
   findParentNodeClosestToPos,
   getExactChangedNodes
-} from "../../utils/prosemirror";
-import { countCheckedItems, findRootTaskList } from "./utils";
+} from "../../utils/prosemirror.js";
+import {
+  countCheckedItems,
+  findRootTaskList,
+  toggleChildren
+} from "./utils.js";
 import { Node as ProsemirrorNode } from "@tiptap/pm/model";
-import { TaskItemNode } from "../task-item";
+import { TaskItemNode } from "../task-item/index.js";
+import { ListItem } from "../list-item/list-item.js";
 
 type TaskListStats = { checked: number; total: number };
 export type TaskListAttributes = {
@@ -54,7 +54,17 @@ export const TaskListNode = TaskList.extend({
     return {
       stats: {
         default: { checked: 0, total: 0 },
-        rendered: false
+        rendered: false,
+        parseHTML: (element) => {
+          // do not update stats for nested task lists
+          if (element.parentElement?.closest("ul"))
+            return { checked: 0, total: 0 };
+          const total = element.querySelectorAll("li.checklist--item").length;
+          const checked = element.querySelectorAll(
+            "li.checklist--item.checked"
+          ).length;
+          return { checked, total };
+        }
       },
       title: {
         default: null,
@@ -89,13 +99,7 @@ export const TaskListNode = TaskList.extend({
   parseHTML() {
     return [
       {
-        tag: "ul",
-        getAttrs: (node) => {
-          if (node instanceof Node && node instanceof HTMLElement) {
-            return node.classList.contains("checklist") && null;
-          }
-          return false;
-        },
+        tag: "ul.checklist",
         priority: 51
       }
     ];
@@ -233,20 +237,6 @@ export const TaskListNode = TaskList.extend({
       //    the task list.
       new Plugin({
         key: new PluginKey("task-list-state-management"),
-        view(view) {
-          const { tr } = view.state;
-          tr.doc.descendants((node, pos) => {
-            if (node.type.name === TaskList.name) {
-              tr.setNodeMarkup(pos, undefined, {
-                ...node.attrs,
-                stats: countCheckedItems(node)
-              });
-              return false;
-            }
-          });
-          view.dispatch(tr);
-          return {};
-        },
         appendTransaction(transactions, oldState, newState) {
           if (!transactions[0].docChanged) return;
 
@@ -347,9 +337,29 @@ export const TaskListNode = TaskList.extend({
     });
     const oldHandler = inputRule.handler;
     inputRule.handler = ({ state, range, match, chain, can, commands }) => {
-      oldHandler({ state, range, match, chain, can, commands });
+      const $from = state.selection.$from;
+      const parentNode = $from.node($from.depth - 1);
+      if (parentNode.type.name === ListItem.name) {
+        return;
+      }
 
-      state.tr.setNodeMarkup(state.tr.selection.to - 2, undefined, {
+      const tr = state.tr;
+      // reset nodes before converting them to a task list.
+      commands.clearNodes();
+
+      oldHandler({
+        state,
+        range: {
+          from: tr.mapping.map(range.from),
+          to: tr.mapping.map(range.to)
+        },
+        match,
+        chain,
+        can,
+        commands
+      });
+
+      tr.setNodeMarkup(state.tr.selection.to - 2, undefined, {
         checked: match[match.length - 1] === "x"
       });
     };
@@ -381,27 +391,4 @@ function areAllChecked(node: ProsemirrorNode) {
     }
   }
   return allChecked;
-}
-
-export function toggleChildren(
-  tr: Transaction,
-  node: ProsemirrorNode,
-  toggleState: boolean,
-  parentPos: number
-) {
-  let changes = 0;
-  node.descendants((node, pos) => {
-    if (
-      node.type.name === TaskItemNode.name &&
-      toggleState !== node.attrs.checked
-    ) {
-      const actualPos = pos + parentPos + 1;
-      tr.setNodeMarkup(tr.mapping.map(actualPos), undefined, {
-        ...node.attrs,
-        checked: toggleState
-      });
-      changes++;
-    }
-  });
-  return changes;
 }

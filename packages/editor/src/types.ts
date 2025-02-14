@@ -24,12 +24,6 @@ export type PermissionRequestEvent = CustomEvent<{ id: keyof UnionCommands }>;
 
 export class Editor extends TiptapEditor {
   private mutex: Mutex = new Mutex();
-  /**
-   * Use this to get the latest instance of the editor.
-   * This is required to reduce unnecessary rerenders of
-   * toolbar elements.
-   */
-  current?: TiptapEditor;
 
   /**
    * Request permission before executing a command to make sure user
@@ -38,14 +32,7 @@ export class Editor extends TiptapEditor {
    * @returns latest editor instance
    */
   requestPermission(id: keyof UnionCommands): TiptapEditor | undefined {
-    const event = new CustomEvent("permissionrequest", {
-      detail: { id },
-      cancelable: true
-    });
-
-    if (!window.dispatchEvent(event)) return undefined;
-
-    return this.current;
+    return hasPermission(id) ? this : undefined;
   }
 
   /**
@@ -54,8 +41,14 @@ export class Editor extends TiptapEditor {
    * you are getting `RangeError: Applying a mismatched transaction` errors.
    */
   threadsafe(callback: (editor: TiptapEditor) => void) {
-    return this.mutex.runExclusive(() =>
-      this.current ? callback(this.current) : void 0
-    );
+    return this.mutex.runExclusive(() => (this ? callback(this) : void 0));
   }
+}
+
+export function hasPermission(id: keyof UnionCommands): boolean {
+  const event = new CustomEvent("permissionrequest", {
+    detail: { id },
+    cancelable: true
+  });
+  return window.dispatchEvent(event);
 }

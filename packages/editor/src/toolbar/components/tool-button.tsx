@@ -21,17 +21,17 @@ import { Theme } from "@notesnook/theme";
 import { SchemeColors } from "@notesnook/theme";
 import React from "react";
 import { ButtonProps } from "@theme-ui/components";
-import { IconNames, Icons } from "../icons";
-import { ToolButtonVariant } from "../types";
-import { Button } from "../../components/button";
+import { IconNames, Icons } from "../icons.js";
+import { ToolButtonVariant } from "../types.js";
+import { Button } from "../../components/button.js";
 import { Icon } from "@notesnook/ui";
-import { useIsMobile } from "../stores/toolbar-store";
+import { useIsMobile } from "../stores/toolbar-store.js";
 
 export type ToolButtonProps = ButtonProps & {
   icon: IconNames;
   iconColor?: SchemeColors;
   iconSize?: keyof Theme["iconSizes"] | number;
-  toggled: boolean;
+  toggled?: boolean;
   buttonRef?: React.RefObject<HTMLButtonElement>;
   variant?: ToolButtonVariant;
 };
@@ -74,7 +74,11 @@ export const ToolButton = React.memo(
               },
           ...sx
         }}
-        onMouseDown={(e) => e.preventDefault()}
+        onMouseDown={(e) => {
+          if (globalThis.keyboardShown) {
+            e.preventDefault();
+          }
+        }}
         {...buttonProps}
       >
         <Icon
@@ -90,6 +94,7 @@ export const ToolButton = React.memo(
       prev.toggled === next.toggled &&
       prev.icon === next.icon &&
       prev.disabled === next.disabled &&
+      prev.onClick === next.onClick &&
       JSON.stringify(prev.sx) === JSON.stringify(next.sx)
     );
   }
